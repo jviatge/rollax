@@ -1,0 +1,9 @@
+{
+    "Bb": ["Bb", "D", "F"],
+    "Bbm": ["Bb", "Db", "F"],
+    "Bbdim": ["Bb", "Db", "E"],
+    "Bbaug": ["Bb", "D", "F#"],
+    "Bb7": ["Bb", "D", "F", "Ab"],
+    "Bbmaj7": ["Bb", "D", "F", "A"],
+    "Bbm7": ["Bb", "Db", "F", "Ab"]
+}

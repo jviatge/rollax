@@ -1,0 +1,9 @@
+{
+    "Ab": ["Ab", "C", "Eb"],
+    "Abm": ["Ab", "B", "Eb"],
+    "Abdim": ["Ab", "B", "D"],
+    "Abaug": ["Ab", "C", "E"],
+    "Ab7": ["Ab", "C", "Eb", "Gb"],
+    "Abmaj7": ["Ab", "C", "Eb", "G"],
+    "Abm7": ["Ab", "B", "Eb", "Gb"]
+}
