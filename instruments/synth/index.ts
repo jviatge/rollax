@@ -20,6 +20,6 @@ export class InstruSynth extends Instrument {
         }
 
         const { noteName, velocity } = safeEvent;
-        this.instrument.triggerAttackRelease(noteName, "8n", this.tone.now(), velocity);
+        return this.instrument.triggerAttackRelease(noteName, "8n", this.tone.now(), velocity);
     };
 }

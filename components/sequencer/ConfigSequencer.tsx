@@ -33,7 +33,9 @@ export const ConfigSequencer = () => {
                 <Select
                     disabled={isPlaying}
                     defaultValue={selectedInstrument}
-                    onValueChange={(value) => handleSelectInstrument(value as "piano" | "synth")}
+                    onValueChange={(value) => {
+                        handleSelectInstrument(value as "piano" | "synth", trackData);
+                    }}
                 >
                     <SelectTrigger>
                         <SelectValue placeholder="Instrument" />

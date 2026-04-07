@@ -21,7 +21,7 @@ import { useSequencer } from "./hooks/useSequencer";
 const nbrNotes = 24;
 
 export const GridSequencer = () => {
-    const { nbrSteps, nbrMeasures, handleChangeChord, octave } = useSequencer();
+    const { nbrSteps, nbrMeasures, handleChangeChord, octave } = useSequencer({ init: true });
     const { listNotes, ListChordsByNotes } = useChord();
     const {
         trackData,

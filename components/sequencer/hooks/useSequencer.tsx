@@ -4,7 +4,7 @@ import { TTrackData } from "@/components/providers/Track.provider";
 import { instruments } from "@/instruments";
 import MidiPlayer from "midi-player-js";
 import MidiWriter from "midi-writer-js";
-import { useContext, useEffect } from "react";
+import { useCallback, useContext, useEffect } from "react";
 import { SequencerContext } from "../providers/Sequencer.provider";
 
 type EventMidiPlayer = {
@@ -19,7 +19,12 @@ type EventMidiPlayer = {
     velocity: number;
 };
 
-export const useSequencer = () => {
+export const useSequencer = (params?: {
+    init?: boolean;
+    callBackProg?: (progress: { tick: number }) => void;
+}) => {
+    const init = params?.init ?? false;
+    const callBackProg = params?.callBackProg;
     const {
         selectedInstrument,
         setSelectedInstrument,
@@ -40,29 +45,66 @@ export const useSequencer = () => {
         writerRef,
     } = useContext(SequencerContext);
 
+    const createMidiWriter = useCallback(
+        (newtrackData: TTrackData[], instrument?: "piano" | "synth") => {
+            /* console.log("createMidiWriter", { newtrackData, instrument }); */
+            const newTrack = new MidiWriter.Track();
+            newtrackData.forEach((data) => {
+                if (data.chord) {
+                    const chordWithOctave = data.chord.map((note) => `${note}${octave}`);
+                    /* console.log("chordWithOctave", chordWithOctave); */
+                    newTrack.addEvent(
+                        new MidiWriter.NoteEvent({
+                            pitch: chordWithOctave,
+                            duration: "2",
+                        }),
+                    );
+                }
+            });
+
+            if (instrument) instrumentRef.current = instruments(instrument);
+
+            const player = new MidiPlayer.Player((event: EventMidiPlayer) => {
+                instrumentRef.current?.playKey(event);
+            });
+            player.on("endOfFile", () => {
+                setIsPlaying(false);
+                setIsPaused(false);
+            });
+            player.on("playing", function (currentTick: { tick: number }) {
+                if (callBackProg) {
+                    callBackProg(currentTick);
+                }
+            });
+            playerRef.current = player;
+            newTrack.setTempo(tempo);
+            writerRef.current = new MidiWriter.Writer(newTrack);
+        },
+        [
+            octave,
+            callBackProg,
+            instrumentRef,
+            playerRef,
+            setIsPlaying,
+            setIsPaused,
+            tempo,
+            writerRef,
+        ],
+    );
+
     useEffect(() => {
-        instrumentRef.current = instruments(selectedInstrument);
-
-        const player = new MidiPlayer.Player((event: EventMidiPlayer) => {
-            instrumentRef.current?.playKey(event);
-        });
-
-        player.on("endOfFile", () => {
-            setIsPlaying(false);
-            setIsPaused(false);
-        });
-
-        playerRef.current = player;
-
-        // Initialize an empty writer
-        const emptyTrack = new MidiWriter.Track();
-        writerRef.current = new MidiWriter.Writer(emptyTrack);
+        if (!init) {
+            return;
+        }
+        console.log("init sequencer");
+        createMidiWriter([], selectedInstrument);
 
         return () => {
             playerRef.current?.stop();
             playerRef.current = null;
         };
-    }, [selectedInstrument]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleStop = () => {
         playerRef.current?.stop();
@@ -104,8 +146,9 @@ export const useSequencer = () => {
         setIsPaused(true);
     };
 
-    const handleSelectInstrument = (instrument: "piano" | "synth") => {
+    const handleSelectInstrument = (instrument: "piano" | "synth", newtrackData: TTrackData[]) => {
         setSelectedInstrument(instrument);
+        createMidiWriter(newtrackData, instrument);
     };
 
     const handleNbrStepsChange = (nbrSteps: number) => {
@@ -118,25 +161,11 @@ export const useSequencer = () => {
 
     const handleTempoChange = (tempo: number, newtrackData: TTrackData[]) => {
         setTempo(tempo);
-        handleChangeChord(newtrackData);
+        createMidiWriter(newtrackData);
     };
 
     const handleChangeChord = (newtrackData: TTrackData[]) => {
-        const newTrack = new MidiWriter.Track();
-        newtrackData.forEach((data) => {
-            if (data.chord) {
-                const chordWithOctave = data.chord.map((note) => `${note}${octave}`);
-                console.log("chordWithOctave", chordWithOctave);
-                newTrack.addEvent(
-                    new MidiWriter.NoteEvent({
-                        pitch: chordWithOctave,
-                        duration: "2",
-                    }),
-                );
-            }
-        });
-        newTrack.setTempo(tempo);
-        writerRef.current = new MidiWriter.Writer(newTrack);
+        createMidiWriter(newtrackData);
     };
 
     return {
