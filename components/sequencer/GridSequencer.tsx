@@ -10,18 +10,17 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { notes } from "@/notes";
-import { Pencil, Plus, Trash } from "lucide-react";
+import { Pencil, Plus, RefreshCcw, Trash } from "lucide-react";
 import { useState } from "react";
 import { useTrack } from "../hooks/useTrack";
 import { Badge } from "../ui/badge";
 import { Card, CardContent } from "../ui/card";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
-
-const nbrNotes = 24;
-
 export const GridSequencer = () => {
-    const { nbrSteps, nbrMeasures, handleChangeChord, octave } = useSequencer({ init: true });
+    const { nbrSteps, nbrMeasures, handleChangeChord, octave, nbrNotes } = useSequencer({
+        init: true,
+    });
     const { listNotes, ListChordsByNotes } = useChord();
     const {
         trackData,
@@ -76,6 +75,16 @@ export const GridSequencer = () => {
                 <CardContent className="p-0">
                     <table className="w-full table-fixed">
                         <tbody>
+                            <tr>
+                                <td className="py-1">
+                                    <div className="flex items-center justify-center w-full">
+                                        <Button variant={"default"} size={"sm"}>
+                                            <RefreshCcw />
+                                        </Button>
+                                    </div>
+                                </td>
+                                <td className="bg-yellow-500" colSpan={nbrSteps * nbrMeasures}></td>
+                            </tr>
                             {[...Array(nbrNotes)].map((_, i) => {
                                 const note = getNoteName(i);
                                 return (

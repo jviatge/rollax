@@ -36,6 +36,8 @@ export const useSequencer = (params?: {
         setNbrSteps,
         nbrMeasures,
         setNbrMeasures,
+        nbrNotes,
+        setNbrNotes,
         tempo,
         setTempo,
         octave,
@@ -182,6 +184,7 @@ export const useSequencer = (params?: {
         isPlaying,
         nbrSteps,
         nbrMeasures,
+        nbrNotes,
         tempo,
         octave,
     };

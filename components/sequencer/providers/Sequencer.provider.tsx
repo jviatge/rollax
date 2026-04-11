@@ -14,6 +14,8 @@ export const SequencerContext = createContext({
     setNbrSteps: (nbrSteps: number) => {},
     nbrMeasures: 1,
     setNbrMeasures: (nbrMeasures: number) => {},
+    nbrNotes: 36,
+    setNbrNotes: (nbrNotes: number) => {},
     tempo: 120,
     setTempo: (tempo: number) => {},
     octave: 4,
@@ -33,6 +35,7 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     const [selectedInstrument, setSelectedInstrument] = useState<"piano" | "synth">("synth");
     const [nbrSteps, setNbrSteps] = useState(4);
     const [nbrMeasures, setNbrMeasures] = useState(1);
+    const [nbrNotes, setNbrNotes] = useState(36);
     const [tempo, setTempo] = useState(120);
     const [octave, setOctave] = useState(4);
     const instrumentRef = useRef<ReturnType<typeof instruments>>(null);
@@ -52,6 +55,8 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
                 setNbrSteps,
                 nbrMeasures,
                 setNbrMeasures,
+                nbrNotes,
+                setNbrNotes,
                 tempo,
                 setTempo,
                 octave,
