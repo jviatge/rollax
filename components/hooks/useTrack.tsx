@@ -44,6 +44,24 @@ export const useTrack = () => {
         );
     };
 
+    /** The free space around the chord at `step`: from the previous chord's end to the next chord's start. */
+    const getChordBounds = (step: number, totalSteps: number) => ({
+        min: Math.max(0, ...trackData.filter((data) => data.step < step).map((data) => data.step + data.len)),
+        max: Math.min(totalSteps, ...trackData.filter((data) => data.step > step).map((data) => data.step)),
+    });
+
+    /** Moves the edges of the chord at `fromStep`, kept inside its free space. */
+    const handleResizeChord = (fromStep: number, step: number, len: number, totalSteps: number) => {
+        const { min, max } = getChordBounds(fromStep, totalSteps);
+        const start = Math.min(Math.max(step, min), max - 1);
+        const end = Math.min(Math.max(step + len, start + 1), max);
+        setTrackData(
+            trackData
+                .map((data) => (data.step === fromStep ? { ...data, step: start, len: end - start } : data))
+                .sort((a, b) => a.step - b.step),
+        );
+    };
+
     const handleReplaceTrack = (track: TTrackData[]) => {
         setTrackData([...track].sort((a, b) => a.step - b.step));
     };
@@ -70,6 +88,8 @@ export const useTrack = () => {
         getChordAt,
         handleChangeChord,
         handleMoveChord,
+        getChordBounds,
+        handleResizeChord,
         handleReplaceTrack,
         handleDeleteChord,
         handleRescale,
