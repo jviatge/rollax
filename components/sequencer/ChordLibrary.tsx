@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 import { noteIndex } from "@/notes";
 import { Search } from "lucide-react";
 import { useState } from "react";
-import { useTrack } from "../hooks/useTrack";
+import { setChordDrag } from "./chordDrag";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
 
@@ -11,8 +11,7 @@ const rootSpellings = (root: string) => root.split("-");
 
 export const ChordLibrary = () => {
     const { listNotes, ListChordsByNotes } = useChord();
-    const { selectedStep, nbrSteps, totalSteps, fundamentalNote } = useSequencer();
-    const { handleChangeChord } = useTrack();
+    const { fundamentalNote } = useSequencer();
     const [query, setQuery] = useState("");
     const [pickedRoot, setPickedRoot] = useState<string | null>(null);
     const [prevFundamental, setPrevFundamental] = useState(fundamentalNote);
@@ -79,24 +78,20 @@ export const ChordLibrary = () => {
             </div>
             <div className="daw-scroll flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
                 {chords.map((chord) => (
-                    <button
+                    <div
                         key={chord.name}
-                        type="button"
-                        disabled={selectedStep === null}
-                        onClick={() =>
-                            selectedStep !== null &&
-                            handleChangeChord(chord.notes, selectedStep, chord.name, nbrSteps, totalSteps)
-                        }
-                        className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-daw-raised bg-daw-bar px-3 py-2 text-left enabled:hover:border-daw-line enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                        draggable
+                        onDragStart={(e) => setChordDrag(e, { name: chord.name, notes: chord.notes })}
+                        className="flex min-h-11 w-full cursor-grab items-center justify-between gap-2 rounded-lg border border-daw-raised bg-daw-bar px-3 py-2 select-none hover:border-daw-line hover:brightness-110 active:cursor-grabbing"
                     >
                         <span className="text-sm font-bold">{chord.name}</span>
                         <span className="font-mono text-[11px] text-daw-sub">{chord.notes.join(" ")}</span>
-                    </button>
+                    </div>
                 ))}
                 {chords.length === 0 && <p className="m-2 text-daw-muted">No matching chord.</p>}
             </div>
             <p className="border-t border-daw-edge px-4 py-3 text-[11px] leading-normal text-daw-muted">
-                Click a step on the chord track, then a chord to place it.
+                Drag a chord onto a step of the chord track or the piano roll.
             </p>
         </aside>
     );

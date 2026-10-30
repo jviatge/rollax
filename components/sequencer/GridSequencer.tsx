@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { noteIndex, notes } from "@/notes";
 import { useEffect, useRef, useState } from "react";
 import { useTrack } from "../hooks/useTrack";
+import { getChordDrag, hasChordDrag, setChordDrag } from "./chordDrag";
 import { useSequencer } from "./hooks/useSequencer";
 
 const KEY_W = 64;
@@ -23,10 +24,19 @@ const Playhead = ({ x }: { x: number }) => (
     />
 );
 
+const DropPreview = ({ x, w }: { x: number; w: number }) => (
+    <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0 z-10 rounded-sm border-2 border-dashed border-daw-accent bg-daw-accent/15"
+        style={{ left: x, width: w }}
+    />
+);
+
 export const GridSequencer = () => {
     const { nbrSteps, nbrMeasures, totalSteps, nbrNotes, octave, playStep, selectedStep, setSelectedStep } =
         useSequencer();
-    const { trackData } = useTrack();
+    const { trackData, handleChangeChord, handleMoveChord } = useTrack();
+    const [dragStep, setDragStep] = useState<number | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [viewW, setViewW] = useState(0);
     const baseOctave = octave - 1;
@@ -71,6 +81,39 @@ export const GridSequencer = () => {
           ? { x: selectedStep * colW, w: colW }
           : null;
 
+    // The chord track and the piano roll both start at the grid origin, so the step under
+    // the pointer comes from its x offset.
+    const stepAt = (e: React.DragEvent<HTMLElement>) =>
+        Math.min(
+            totalSteps - 1,
+            Math.max(0, Math.floor((e.clientX - e.currentTarget.getBoundingClientRect().left) / colW)),
+        );
+    const dropHandlers = {
+        onDragOver: (e: React.DragEvent<HTMLDivElement>) => {
+            if (!hasChordDrag(e)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = e.dataTransfer.effectAllowed === "move" ? "move" : "copy";
+            setDragStep(stepAt(e));
+        },
+        onDragLeave: (e: React.DragEvent<HTMLDivElement>) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragStep(null);
+        },
+        onDrop: (e: React.DragEvent<HTMLDivElement>) => {
+            const payload = getChordDrag(e);
+            setDragStep(null);
+            if (!payload) return;
+            e.preventDefault();
+            const step = stepAt(e);
+            if ("fromStep" in payload) {
+                handleMoveChord(payload.fromStep, step, totalSteps);
+            } else {
+                handleChangeChord(payload.notes, step, payload.name, totalSteps);
+            }
+            setSelectedStep(step);
+        },
+    };
+    const dropPreview = dragStep !== null && <DropPreview x={dragStep * colW} w={colW} />;
+
     return (
         <div ref={scrollRef} className="daw-scroll relative min-h-0 flex-1 overflow-auto">
             <div
@@ -106,7 +149,11 @@ export const GridSequencer = () => {
                     CHORDS
                 </div>
                 <div className="sticky z-20 border-b border-daw-edge bg-[#202023]" style={{ top: RULER_H }}>
-                    <div className="relative h-full" style={gridLines(measureW, colW, "#3a3a3f", "#2b2b2f")}>
+                    <div
+                        className="relative h-full"
+                        style={gridLines(measureW, colW, "#3a3a3f", "#2b2b2f")}
+                        {...dropHandlers}
+                    >
                         {steps.map((step) => (
                             <button
                                 key={step}
@@ -124,13 +171,15 @@ export const GridSequencer = () => {
                             <button
                                 key={data.step}
                                 type="button"
+                                draggable
+                                onDragStart={(e) => setChordDrag(e, { fromStep: data.step })}
                                 onClick={(e) => {
                                     // A click past the first step selects that step, so a chord can split this one.
                                     const offset = e.clientX - e.currentTarget.getBoundingClientRect().left + 2;
                                     setSelectedStep(data.step + Math.min(data.len - 1, Math.floor(offset / colW)));
                                 }}
                                 className={cn(
-                                    "absolute top-1.75 flex h-9.5 flex-col items-start justify-center overflow-hidden rounded-md border-2 border-transparent bg-daw-accent px-2 text-left text-daw-accent-ink",
+                                    "absolute top-1.75 flex h-9.5 cursor-grab flex-col items-start justify-center overflow-hidden rounded-md border-2 border-transparent bg-daw-accent px-2 text-left text-daw-accent-ink active:cursor-grabbing",
                                     selectedStep === data.step && "border-white",
                                 )}
                                 style={{ left: data.step * colW + 2, width: data.len * colW - 4 }}
@@ -139,6 +188,7 @@ export const GridSequencer = () => {
                                 <span className="font-mono text-[10px] whitespace-nowrap">{data.chord.join(" ")}</span>
                             </button>
                         ))}
+                        {dropPreview}
                         <Playhead x={playX} />
                     </div>
                 </div>
@@ -164,7 +214,7 @@ export const GridSequencer = () => {
                 </div>
 
                 {/* Piano roll */}
-                <div className="relative">
+                <div className="relative" {...dropHandlers}>
                     {rows.map((row, i) => (
                         <div
                             key={i}
@@ -203,6 +253,7 @@ export const GridSequencer = () => {
                             </div>
                         )),
                     )}
+                    {dropPreview}
                     <Playhead x={playX} />
                 </div>
             </div>

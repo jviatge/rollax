@@ -33,15 +33,16 @@ The app is a full-screen, desktop-only layout (minimum width 1200 px; narrower w
 
 - **Transport bar:** previous/next measure, stop, play/pause, and loop (on by default). An LCD-style display shows the playhead position (bar · step), tempo, time signature (always 4/4), and the selected key.
 - **Inspector (left):** instrument (Synth by default, or Piano), tempo (40–240 BPM, applied on blur or Enter), key, number of measures (1–4), and steps per measure (1/2, 1/4, 1/8, 1/16). Measures and steps are locked while playing or paused; changing the steps keeps chords at the same musical position. The selected step section shows its chord and a delete button.
-- **Grid (center):** a bar ruler, a chord track, and a piano roll of 36 rows (C3–B5). Click a step on the chord track to select it. The steps stretch to fill the width and only scroll horizontally below 36 px per step. The ruler, chord track, and keyboard stay pinned while scrolling, and the view opens centered on octave 4.
-- **Chord library (right):** chords from `chords/`, filtered by root note or by a search across all roots. Clicking a chord places it on the selected step. A chord lasts until the next chord, at most one measure; placing a chord inside another one shortens the earlier chord.
+- **Grid (center):** a bar ruler, a chord track, and a piano roll of 36 rows (C3–B5). Click a chord or a step on the chord track to select it; drag a placed chord to move it to another step. The steps stretch to fill the width and only scroll horizontally below 36 px per step. The ruler, chord track, and keyboard stay pinned while scrolling, and the view opens centered on octave 4.
+- **Chord library (right):** chords from `chords/`, filtered by root note or by a search across all roots. Drag a chord onto a step of the chord track or the piano roll to place it there; a dashed outline shows the target step. A dropped chord lasts one step and replaces a chord already on that step; dropping inside a longer chord shortens it.
 - **Playback:** chords play at their grid position for their length through the Tone.js transport. With loop off, playback stops at the end of the grid.
 
 ### Known limitations
 
 - Chords always play in octave 4, in root position (every note in that octave).
 - The key only sets which root the chord library shows; it does not affect sound.
-- Chord length can't be edited directly; it comes from where the next chord starts.
+- Chord length can't be edited: a placed chord lasts one step (changing the steps per measure rescales it).
+- Placing chords needs a mouse: there is no keyboard alternative to drag and drop.
 - **Generate** and **Export MIDI** are shown but disabled.
 - The UI is not designed for mobile.
 
@@ -58,7 +59,7 @@ The app is a full-screen, desktop-only layout (minimum width 1200 px; narrower w
 ## Architecture
 
 - `app/page.tsx` is a Server Component that loads the chord data. `app/page.client.tsx` wraps the sequencer in `TrackProvider`.
-- `components/providers/Track.provider.tsx` holds the track, a list of `{ step, len, chord, name }` entries (start step and length in steps), and `components/hooks/useTrack.tsx` edits it (placing, splitting, deleting, and rescaling chords).
+- `components/providers/Track.provider.tsx` holds the track, a list of `{ step, len, chord, name }` entries (start step and length in steps), and `components/hooks/useTrack.tsx` edits it (placing, moving, splitting, deleting, and rescaling chords). The drag-and-drop payload is defined in `components/sequencer/chordDrag.ts`.
 - `components/sequencer/` contains the sequencer:
   - `TransportBar`, `Inspector`, `GridSequencer`, `ChordLibrary`, `StatusBar`: the UI, laid out in `index.tsx`.
   - `providers/Sequencer.provider.tsx`: grid and playback settings, the selected step, and the audio engine. It rebuilds a `Tone.Part` whenever the track changes, sets the transport tempo and loop, and follows the transport position for the playhead.

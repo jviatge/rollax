@@ -9,30 +9,39 @@ export const useTrack = () => {
         trackData.find((data) => step >= data.step && step < data.step + data.len) ?? null;
 
     /**
-     * Places a chord at `step`. It lasts until the next chord, at most `maxLen` steps,
-     * and shortens a previous chord that would overlap it.
+     * Puts `entry` on the grid, replacing a chord on the same step, shortening a previous
+     * chord that would overlap it, and cutting it before the next chord or the grid end.
      */
-    const handleChangeChord = (
-        chord: string[],
-        step: number,
-        name: string | undefined,
-        maxLen: number,
-        totalSteps: number,
-    ) => {
-        const others = trackData
-            .filter((data) => data.step !== step)
+    const placeChord = (entry: TTrackData, totalSteps: number, track: TTrackData[]) => {
+        const others = track
+            .filter((data) => data.step !== entry.step)
             .map((data) =>
-                data.step < step && data.step + data.len > step
-                    ? { ...data, len: step - data.step }
+                data.step < entry.step && data.step + data.len > entry.step
+                    ? { ...data, len: entry.step - data.step }
                     : data,
             );
         const nextStep = Math.min(
             totalSteps,
-            ...others.filter((data) => data.step > step).map((data) => data.step),
+            ...others.filter((data) => data.step > entry.step).map((data) => data.step),
         );
-        const len = Math.max(1, Math.min(maxLen, nextStep - step));
+        const len = Math.max(1, Math.min(entry.len, nextStep - entry.step));
 
-        setTrackData([...others, { step, len, chord, name }].sort((a, b) => a.step - b.step));
+        setTrackData([...others, { ...entry, len }].sort((a, b) => a.step - b.step));
+    };
+
+    /** Places a new one-step chord at `step`. */
+    const handleChangeChord = (chord: string[], step: number, name: string | undefined, totalSteps: number) => {
+        placeChord({ step, len: 1, chord, name }, totalSteps, trackData);
+    };
+
+    const handleMoveChord = (fromStep: number, toStep: number, totalSteps: number) => {
+        const moved = trackData.find((data) => data.step === fromStep);
+        if (!moved || fromStep === toStep) return;
+        placeChord(
+            { ...moved, step: toStep },
+            totalSteps,
+            trackData.filter((data) => data.step !== fromStep),
+        );
     };
 
     const handleDeleteChord = (step: number) => {
@@ -56,6 +65,7 @@ export const useTrack = () => {
         trackData,
         getChordAt,
         handleChangeChord,
+        handleMoveChord,
         handleDeleteChord,
         handleRescale,
     };

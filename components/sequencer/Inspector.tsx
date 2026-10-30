@@ -166,10 +166,10 @@ export const Inspector = () => {
                 ) : (
                     <p className="rounded-[10px] border border-dashed border-daw-line p-3.5 leading-normal text-daw-muted">
                         {selectedStep === null
-                            ? "Click a step on the chord track to select it."
+                            ? "Click a chord or a step on the chord track to select it."
                             : getChordAt(selectedStep)
-                              ? `Inside ${getChordAt(selectedStep)?.name}. Pick a chord to split it here.`
-                              : "Empty step. Pick a chord in the library to place it here."}
+                              ? `Inside ${getChordAt(selectedStep)?.name}. Drop a chord here to split it.`
+                              : "Empty step. Drag a chord from the library onto it."}
                     </p>
                 )}
             </section>
