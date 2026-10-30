@@ -65,12 +65,9 @@ export const Inspector = () => {
         fundamentalNote,
         setFundamentalNote,
         selectedStep,
-        isPlaying,
-        isPaused,
     } = useSequencer();
     const { trackData, getChordAt, handleDeleteChord } = useTrack();
     const [tempoDraft, setTempoDraft] = useState(String(tempo));
-    const gridLocked = isPlaying || isPaused;
     const selectedChord = trackData.find((data) => data.step === selectedStep);
 
     const commitTempo = () => {
@@ -124,14 +121,12 @@ export const Inspector = () => {
                 <Segmented
                     label="Measures"
                     value={nbrMeasures}
-                    disabled={gridLocked}
                     options={[1, 2, 3, 4].map((value) => ({ value, label: String(value) }))}
                     onChange={handleNbrMeasuresChange}
                 />
                 <Segmented
                     label="Steps per measure"
                     value={nbrSteps}
-                    disabled={gridLocked}
                     options={[2, 4, 8, 16].map((value) => ({ value, label: `1/${value}` }))}
                     onChange={handleNbrStepsChange}
                 />

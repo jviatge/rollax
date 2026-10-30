@@ -168,18 +168,20 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
         seek(next >= totalSteps ? 0 : next);
     };
 
+    // Grid changes keep the transport position: steps are rescaled to the same musical time,
+    // and the playhead only jumps back to the start if it falls past a shortened grid.
     const handleNbrStepsChange = (value: number) => {
         handleRescale(value / nbrSteps, value * nbrMeasures);
         setNbrSteps(value);
         setSelectedStep(null);
-        setPlayStep(0);
+        setPlayStep(Math.floor((playStep * value) / nbrSteps));
     };
 
     const handleNbrMeasuresChange = (value: number) => {
         handleRescale(1, nbrSteps * value);
         setNbrMeasures(value);
         setSelectedStep(null);
-        setPlayStep(0);
+        if (playStep >= nbrSteps * value) seek(0);
     };
 
     return (
