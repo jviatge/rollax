@@ -27,6 +27,8 @@ type TSequencerContext = {
     isPlaying: boolean;
     isPaused: boolean;
     playStep: number;
+    /** The transport position in steps, with the fraction of the current step. */
+    getPlayPosition: () => number;
     cycle: boolean;
     toggleCycle: () => void;
     handlePlay: () => Promise<void>;
@@ -109,20 +111,22 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
         };
     }, [tempo, nbrMeasures, cycle, handleStop]);
 
-    // Move the playhead with the transport.
+    const getPlayPosition = useCallback(
+        () => (Tone.getTransport().getTicksAtTime(Tone.immediate()) / getStepTicks()) % totalSteps,
+        [getStepTicks, totalSteps],
+    );
+
+    // Follow the transport step by step; the playhead itself reads getPlayPosition every frame.
     useEffect(() => {
         if (!isPlaying) return;
-        const transport = Tone.getTransport();
-        const stepTicks = getStepTicks();
         let frame = 0;
         const update = () => {
-            const ticks = transport.getTicksAtTime(Tone.immediate());
-            setPlayStep(Math.floor(ticks / stepTicks) % totalSteps);
+            setPlayStep(Math.floor(getPlayPosition()));
             frame = requestAnimationFrame(update);
         };
         frame = requestAnimationFrame(update);
         return () => cancelAnimationFrame(frame);
-    }, [isPlaying, totalSteps, getStepTicks]);
+    }, [isPlaying, getPlayPosition]);
 
     useEffect(() => {
         return () => {
@@ -205,6 +209,7 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
                 isPlaying,
                 isPaused,
                 playStep,
+                getPlayPosition,
                 cycle,
                 toggleCycle: () => setCycle((value) => !value),
                 handlePlay,

@@ -18,6 +18,7 @@
 
 - The track (the placed chords, each with a start `step` and a `len` in steps) lives in `TrackProvider` (`components/providers/`). Edit it only through `useTrack`, which keeps chords from overlapping.
 - Grid and playback settings, the selected step, and the audio engine live in `SequencerProvider` (`components/sequencer/providers/`). Playback is scheduled with the Tone.js transport: the provider rebuilds a `Tone.Part` from the track on every change, so components only need to update the track.
+- The playhead reads `getPlayPosition()` (fractional steps) every frame and moves itself with `transform`; don't put a per-frame position in React state.
 - One step is `PPQ * 4 / nbrSteps` transport ticks (4/4 time). Keep that conversion in the provider.
 - To add an instrument, extend `Instrument` in `instruments/`, register it in `instruments/index.ts`, and add it to `TInstrumentType` and the instrument control in `Inspector`.
 - Style the sequencer with the `daw-*` color tokens from `app/globals.css`, not new hard-coded colors. The layout is full-screen desktop only; do not add a mobile layout unless asked.

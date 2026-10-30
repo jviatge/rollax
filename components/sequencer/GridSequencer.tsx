@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { noteIndex, notes } from "@/notes";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { TTrackData } from "../providers/Track.provider";
 import { useTrack } from "../hooks/useTrack";
 import { getChordDrag, hasChordDrag, setChordDrag } from "./chordDrag";
@@ -17,13 +17,36 @@ const gridLines = (measureW: number, colW: number, measureColor: string, stepCol
     backgroundSize: `${measureW}px 100%, ${colW}px 100%`,
 });
 
-const Playhead = ({ x }: { x: number }) => (
-    <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-daw-playhead"
-        style={{ left: x }}
-    />
-);
+/** Glides with the transport while playing, stays where it paused, and sits on the play step when stopped. */
+const Playhead = ({ colW }: { colW: number }) => {
+    const { isPlaying, isPaused, playStep, getPlayPosition } = useSequencer();
+    const ref = useRef<HTMLDivElement>(null);
+
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const place = (position: number) => (el.style.transform = `translateX(${position * colW}px)`);
+        if (!isPlaying) {
+            place(isPaused ? getPlayPosition() : playStep);
+            return;
+        }
+        let frame = 0;
+        const update = () => {
+            place(getPlayPosition());
+            frame = requestAnimationFrame(update);
+        };
+        update();
+        return () => cancelAnimationFrame(frame);
+    }, [isPlaying, isPaused, playStep, getPlayPosition, colW]);
+
+    return (
+        <div
+            ref={ref}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 z-10 w-0.5 bg-daw-playhead will-change-transform"
+        />
+    );
+};
 
 const DropPreview = ({ x, w }: { x: number; w: number }) => (
     <div
@@ -36,7 +59,7 @@ const DropPreview = ({ x, w }: { x: number; w: number }) => (
 type TResize = { fromStep: number; edge: "start" | "end"; step: number; len: number };
 
 export const GridSequencer = () => {
-    const { nbrSteps, nbrMeasures, totalSteps, nbrNotes, octave, playStep, selectedStep, setSelectedStep } =
+    const { nbrSteps, nbrMeasures, totalSteps, nbrNotes, octave, selectedStep, setSelectedStep } =
         useSequencer();
     const { trackData, handleChangeChord, handleMoveChord, getChordBounds, handleResizeChord } = useTrack();
     const [dragStep, setDragStep] = useState<number | null>(null);
@@ -85,7 +108,6 @@ export const GridSequencer = () => {
         };
     });
     const rowOf = (note: string) => nbrNotes - 1 - ((octave - baseOctave) * 12 + noteIndex(note));
-    const playX = playStep * colW;
     const highlight = selectedChord
         ? { x: selectedChord.step * colW, w: selectedChord.len * colW }
         : selectedStep !== null
@@ -177,7 +199,7 @@ export const GridSequencer = () => {
                                 {measure + 1}
                             </span>
                         ))}
-                        <Playhead x={playX} />
+                        <Playhead colW={colW} />
                     </div>
                 </div>
 
@@ -255,7 +277,7 @@ export const GridSequencer = () => {
                             </div>
                         ))}
                         {dropPreview}
-                        <Playhead x={playX} />
+                        <Playhead colW={colW} />
                     </div>
                 </div>
 
@@ -320,7 +342,7 @@ export const GridSequencer = () => {
                         )),
                     )}
                     {dropPreview}
-                    <Playhead x={playX} />
+                    <Playhead colW={colW} />
                 </div>
             </div>
         </div>
