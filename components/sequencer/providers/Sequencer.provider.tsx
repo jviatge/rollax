@@ -44,7 +44,7 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     const { trackData, handleRescale } = useTrack();
     const [selectedInstrument, setSelectedInstrument] = useState<TInstrumentType>("synth");
     const [tempo, setTempo] = useState(120);
-    const [nbrMeasures, setNbrMeasures] = useState(1);
+    const [nbrMeasures, setNbrMeasures] = useState(4);
     const [nbrSteps, setNbrSteps] = useState(4);
     const [fundamentalNote, setFundamentalNote] = useState("C");
     const [selectedStep, setSelectedStep] = useState<number | null>(null);
