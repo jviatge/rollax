@@ -1,3 +1,4 @@
+import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import { noteIndex, notes } from "@/notes";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
@@ -68,6 +69,7 @@ export const GridSequencer = () => {
         selectedStep,
         setSelectedStep,
         selectedRange,
+        selectedArea,
         extendSelection,
     } = useSequencer();
     const {
@@ -76,6 +78,7 @@ export const GridSequencer = () => {
         handleMoveChord,
         getChordBounds,
         handleResizeChord,
+        handleReplaceRange,
     } = useTrack();
     const [dragStep, setDragStep] = useState<number | null>(null);
     const [resize, setResize] = useState<TResize | null>(null);
@@ -100,9 +103,14 @@ export const GridSequencer = () => {
     }, []);
 
     const clearSelection = useEffectEvent(() => setSelectedStep(null));
+    // Removes the chord parts inside the selection, splitting a chord selected in its middle.
+    const deleteSelection = useEffectEvent(() => {
+        if (selectedArea) handleReplaceRange(selectedArea.start, selectedArea.end, []);
+    });
 
     // A press outside the ruler and the chord track, or Escape, clears the selection. Controls are
-    // left out so they can act on it, and so is the grid's own scrollbar.
+    // left out so they can act on it, and so is the grid's own scrollbar. Delete or Backspace
+    // deletes what is selected.
     useEffect(() => {
         const handlePointer = (e: PointerEvent) => {
             const target = e.target;
@@ -111,7 +119,14 @@ export const GridSequencer = () => {
             if (target.closest("button, input, select, textarea, a, label, [draggable='true']")) return;
             clearSelection();
         };
-        const handleKey = (e: KeyboardEvent) => e.key === "Escape" && clearSelection();
+        const handleKey = (e: KeyboardEvent) => {
+            if (isTypingTarget(e.target)) return;
+            if (e.key === "Escape") clearSelection();
+            if (e.key === "Delete" || e.key === "Backspace") {
+                e.preventDefault();
+                deleteSelection();
+            }
+        };
         window.addEventListener("pointerdown", handlePointer);
         window.addEventListener("keydown", handleKey);
         return () => {
