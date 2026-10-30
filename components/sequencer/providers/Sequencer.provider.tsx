@@ -182,7 +182,8 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     };
 
     const handleNbrMeasuresChange = (value: number) => {
-        handleRescale(1, nbrSteps * value);
+        // A longer grid keeps every chord, so only a shorter one touches the track.
+        if (value < nbrMeasures) handleRescale(1, nbrSteps * value);
         setNbrMeasures(value);
         setSelectedStep(null);
         if (playStep >= nbrSteps * value) seek(0);

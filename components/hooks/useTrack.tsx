@@ -2,7 +2,7 @@ import { useContext } from "react";
 import { TrackContext, TTrackData } from "../providers/Track.provider";
 
 export const useTrack = () => {
-    const { trackData, setTrackData } = useContext(TrackContext);
+    const { trackData, setTrackData, undo, redo } = useContext(TrackContext);
 
     /** The chord sounding at `step`, whether it starts there or earlier. */
     const getChordAt = (step: number) =>
@@ -70,7 +70,10 @@ export const useTrack = () => {
         setTrackData(trackData.filter((data) => data.step !== step));
     };
 
-    /** Keeps chords at the same musical position when the steps per measure change. */
+    /**
+     * Keeps chords at the same musical position when the grid changes. Clears the undo history,
+     * whose tracks were laid out for the old grid.
+     */
     const handleRescale = (ratio: number, totalSteps: number) => {
         const rescaled: TTrackData[] = trackData
             .map((data) => ({
@@ -80,7 +83,7 @@ export const useTrack = () => {
             }))
             .filter((data) => data.step < totalSteps)
             .map((data) => ({ ...data, len: Math.min(data.len, totalSteps - data.step) }));
-        setTrackData(rescaled);
+        setTrackData(rescaled, { record: false });
     };
 
     return {
@@ -93,5 +96,7 @@ export const useTrack = () => {
         handleReplaceTrack,
         handleDeleteChord,
         handleRescale,
+        undo,
+        redo,
     };
 };

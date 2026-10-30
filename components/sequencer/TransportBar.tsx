@@ -1,3 +1,4 @@
+import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import {
     AudioLines,
@@ -15,10 +16,6 @@ import { useTrack } from "../hooks/useTrack";
 import { generateProgression, PROGRESSIONS } from "./generate";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
-
-const isTypingTarget = (target: EventTarget | null) =>
-    target instanceof HTMLElement &&
-    (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 
 const transportButton =
     "flex h-8 w-9 items-center justify-center rounded-md border border-daw-line bg-daw-raised text-daw-text hover:brightness-125";
