@@ -31,7 +31,7 @@ The project has no automated tests yet.
 
 The app is a full-screen, desktop-only layout (minimum width 1200 px; narrower windows scroll horizontally).
 
-- **Transport bar:** previous/next measure, stop, play/pause, and loop (on by default). An LCD-style display shows the playhead position (bar · step), tempo, time signature (always 4/4), and the selected key.
+- **Transport bar:** previous/next measure, stop, play/pause, and loop (on by default). The Space bar toggles play/pause, except while typing in a field. An LCD-style display shows the playhead position (bar · step), tempo, time signature (always 4/4), and the selected key.
 - **Inspector (left):** instrument (Synth by default, or Piano), tempo (40–240 BPM, applied on blur or Enter), key, number of measures (1–4), and steps per measure (1/2, 1/4, 1/8, 1/16). Measures and steps are locked while playing or paused; changing the steps keeps chords at the same musical position. The selected step section shows its chord and a delete button.
 - **Grid (center):** a bar ruler, a chord track, and a piano roll of 36 rows (C3–B5). Click a chord or a step on the chord track to select it; drag a placed chord to move it to another step. The steps stretch to fill the width and only scroll horizontally below 36 px per step. The ruler, chord track, and keyboard stay pinned while scrolling, and the view opens centered on octave 4.
 - **Chord library (right):** chords from `chords/`, filtered by root note or by a search across all roots. Drag a chord onto a step of the chord track or the piano roll to place it there; a dashed outline shows the target step. A dropped chord lasts one step and replaces a chord already on that step; dropping inside a longer chord shortens it.

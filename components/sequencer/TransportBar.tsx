@@ -10,7 +10,12 @@ import {
     Square,
     WandSparkles,
 } from "lucide-react";
+import { useEffect, useEffectEvent } from "react";
 import { useSequencer } from "./hooks/useSequencer";
+
+const isTypingTarget = (target: EventTarget | null) =>
+    target instanceof HTMLElement &&
+    (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 
 const transportButton =
     "flex h-8 w-9 items-center justify-center rounded-md border border-daw-line bg-daw-raised text-daw-text hover:brightness-125";
@@ -37,6 +42,24 @@ export const TransportBar = () => {
         handlePreviousMeasure,
         handleNextMeasure,
     } = useSequencer();
+
+    const togglePlayback = useEffectEvent(() => (isPlaying ? handlePause() : handlePlay()));
+
+    // Space toggles playback, except while typing in a field.
+    useEffect(() => {
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.code !== "Space" || isTypingTarget(e.target)) return;
+            // Also stops a focused button from being clicked by the same key press.
+            e.preventDefault();
+            if (e.type === "keydown" && !e.repeat) togglePlayback();
+        };
+        window.addEventListener("keydown", handleKey);
+        window.addEventListener("keyup", handleKey);
+        return () => {
+            window.removeEventListener("keydown", handleKey);
+            window.removeEventListener("keyup", handleKey);
+        };
+    }, []);
 
     return (
         <header className="grid h-15 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-daw-edge bg-daw-bar px-4">
