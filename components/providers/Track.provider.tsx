@@ -1,21 +1,19 @@
 import { createContext, useState } from "react";
 
+/** A chord placed on the grid, starting at `step` and lasting `len` steps. */
+export type TTrackData = {
+    step: number;
+    len: number;
+    chord: string[];
+    name?: string;
+};
+
 export const TrackContext = createContext({
-    trackData: [] as {
-        step: number;
-        chord: string[] | null;
-        name?: string;
-    }[],
-    setTrackData: (trackData: { step: number; chord: string[] | null }[]) => {
+    trackData: [] as TTrackData[],
+    setTrackData: (trackData: TTrackData[]) => {
         console.warn("setTrackData not implemented", trackData);
     },
 });
-
-export type TTrackData = {
-    step: number;
-    chord: string[] | null;
-    name?: string;
-};
 
 export const TrackProvider = ({ children }: { children: React.ReactNode }) => {
     const [trackData, setTrackData] = useState<TTrackData[]>([]);

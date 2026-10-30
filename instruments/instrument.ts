@@ -1,43 +1,22 @@
 import * as Tone from "tone";
 
-export type EventMidiPlayer = {
-    track: number;
-    delta: number;
-    tick: number;
-    byteIndex: number;
-    name: string;
-    channel: number;
-    noteNumber: number;
-    noteName: string;
-    velocity: number;
-};
+export type TInstrumentType = "piano" | "synth";
 
-export class Instrument {
-    isPlaying: boolean = false;
+export abstract class Instrument {
+    protected abstract instrument: Tone.Sampler | Tone.PolySynth | null;
 
-    checkEventKey = (
-        event: EventMidiPlayer,
-        instrument: Tone.Sampler | Tone.Synth | null,
-    ): { noteName: string; velocity: number } | null => {
-        const isPlayableMidiEvent = (event: EventMidiPlayer) => {
-            if (event.name !== "Note on") {
-                return false;
-            }
-            if (event.velocity <= 0) {
-                return false;
-            }
-            return /^[A-G](#|b)?-?\d+$/.test(event.noteName);
-        };
-        if (!isPlayableMidiEvent(event)) {
-            return null;
-        }
-        const isValidNote = /^[A-G](#|b)?-?\d+$/.test(event.noteName);
-        if (!instrument || !isValidNote) {
-            return null;
-        }
-        const safeVelocity = Number.isFinite(event.velocity)
-            ? Math.min(Math.max(event.velocity, 0), 1)
-            : 0.8;
-        return { ...event, velocity: safeVelocity };
+    abstract init(): void;
+
+    playChord = (notes: string[], duration: Tone.Unit.Time, time: number) => {
+        this.instrument?.triggerAttackRelease(notes, duration, time);
+    };
+
+    releaseAll = () => {
+        this.instrument?.releaseAll();
+    };
+
+    dispose = () => {
+        this.instrument?.dispose();
+        this.instrument = null;
     };
 }

@@ -1,182 +1,211 @@
-import { Button } from "@/components/ui/button";
-import {
-    Command,
-    CommandDialog,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-} from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { notes } from "@/notes";
-import { Pencil, Plus, RefreshCcw, Trash } from "lucide-react";
-import { useState } from "react";
+import { noteIndex, notes } from "@/notes";
+import { useEffect, useRef, useState } from "react";
 import { useTrack } from "../hooks/useTrack";
-import { Badge } from "../ui/badge";
-import { Card, CardContent } from "../ui/card";
-import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
+
+const KEY_W = 64;
+const ROW_H = 20;
+const RULER_H = 28;
+const LANE_H = 52;
+const MIN_COL_W = 36;
+
+const gridLines = (measureW: number, colW: number, measureColor: string, stepColor: string) => ({
+    backgroundImage: `linear-gradient(to right, ${measureColor} 1px, transparent 1px), linear-gradient(to right, ${stepColor} 1px, transparent 1px)`,
+    backgroundSize: `${measureW}px 100%, ${colW}px 100%`,
+});
+
+const Playhead = ({ x }: { x: number }) => (
+    <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-daw-playhead"
+        style={{ left: x }}
+    />
+);
+
 export const GridSequencer = () => {
-    const { nbrSteps, nbrMeasures, handleChangeChord, octave, nbrNotes } = useSequencer({
-        init: true,
-    });
-    const { listNotes, ListChordsByNotes } = useChord();
-    const {
-        trackData,
-        handleChangeChord: handleTrackChangeChord,
-        getChordAtStep,
-        handleDeleteChord: handleDeleteChordTrack,
-    } = useTrack();
-    const [changeChord, setChangeChord] = useState<number | null>(null);
+    const { nbrSteps, nbrMeasures, totalSteps, nbrNotes, octave, playStep, selectedStep, setSelectedStep } =
+        useSequencer();
+    const { trackData } = useTrack();
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [viewW, setViewW] = useState(0);
+    const baseOctave = octave - 1;
 
-    const getNoteName = (
-        noteIndex: number,
-    ): {
-        name: string;
-        classKey: string;
-        classCell: string;
-        nameWithOctave: string;
-        octave: number;
-    } => {
-        const octaveResolved = Math.floor(noteIndex / 12) + octave - 1;
-        const noteName = notes[noteIndex % 12];
+    // Fit the steps to the available width; scroll horizontally only below MIN_COL_W.
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const observer = new ResizeObserver(([entry]) => setViewW(entry.contentRect.width));
+        observer.observe(el);
+        // Open centered on the octave the chords play in.
+        const octaveCenter = RULER_H + LANE_H + (nbrNotes - (octave - baseOctave + 1) * 12 + 6) * ROW_H;
+        el.scrollTop = Math.max(0, octaveCenter - el.clientHeight / 2);
+        return () => observer.disconnect();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const colW = Math.max(MIN_COL_W, Math.floor((viewW - KEY_W) / totalSteps) || MIN_COL_W);
+    const gridW = colW * totalSteps;
+    const measureW = colW * nbrSteps;
+    const selectedChord = trackData.find((data) => data.step === selectedStep);
+    const selectedNotes = new Set(selectedChord?.chord.map(noteIndex) ?? []);
+    const steps = [...Array(totalSteps).keys()];
+
+    // Top row is the highest note.
+    const rows = [...Array(nbrNotes).keys()].map((row) => {
+        const index = nbrNotes - 1 - row;
+        const name = notes[index % 12];
+        const rowOctave = baseOctave + Math.floor(index / 12);
         return {
-            octave: octaveResolved,
-            name: noteName,
-            nameWithOctave: `${noteName}${octaveResolved}`,
-            classKey: noteName.includes("#") ? "bg-gray-600 text-white" : "bg-white",
-            classCell: noteName.includes("#") ? "bg-gray-200" : "bg-white",
+            name,
+            octave: rowOctave,
+            black: name.includes("#"),
+            inSelectedChord: rowOctave === octave && selectedNotes.has(index % 12),
         };
-    };
-
-    const handleChangeChordSelected = (note: string, chord: string) => {
-        const newtrackData = handleTrackChangeChord(
-            ListChordsByNotes[note][chord],
-            changeChord ?? 0,
-            chord,
-        );
-        handleChangeChord(newtrackData);
-        setChangeChord(null);
-    };
-
-    const handleDeleteChord = (step: number) => {
-        const newtrackData = handleDeleteChordTrack(step);
-        handleChangeChord(newtrackData);
-    };
-
-    const getTrackDataByStep = (step: number) => {
-        return trackData.find((data) => data.step === step);
-    };
+    });
+    const rowOf = (note: string) => nbrNotes - 1 - ((octave - baseOctave) * 12 + noteIndex(note));
+    const playX = playStep * colW;
+    const highlight = selectedChord
+        ? { x: selectedChord.step * colW, w: selectedChord.len * colW }
+        : selectedStep !== null
+          ? { x: selectedStep * colW, w: colW }
+          : null;
 
     return (
-        <>
-            <Card className="w-full p-0">
-                <CardContent className="p-0">
-                    <table className="w-full table-fixed">
-                        <tbody>
-                            <tr>
-                                <td className="py-1">
-                                    <div className="flex items-center justify-center w-full">
-                                        <Button variant={"default"} size={"sm"}>
-                                            <RefreshCcw />
-                                        </Button>
-                                    </div>
-                                </td>
-                                <td className="bg-yellow-500" colSpan={nbrSteps * nbrMeasures}></td>
-                            </tr>
-                            {[...Array(nbrNotes)].map((_, i) => {
-                                const note = getNoteName(i);
-                                return (
-                                    <tr key={i}>
-                                        <td className={`border text-xs pl-2 w-12 ${note.classKey}`}>
-                                            {note.nameWithOctave}
-                                        </td>
-                                        {[...Array(nbrSteps * nbrMeasures)].map((_, j) => (
-                                            <td key={j} className={cn("border", note.classCell)}>
-                                                {note.octave === octave &&
-                                                    getChordAtStep(j)?.includes(note.name) && (
-                                                        <div className="bg-blue-500 h-3 w-5/6 rounded-xl mx-auto" />
-                                                    )}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                );
-                            })}
-                            <tr>
-                                <td className="h-12"></td>
-                                {[...Array(nbrSteps * nbrMeasures)].map((_, j) => (
-                                    <td
-                                        key={j}
-                                        className={cn(
-                                            "border",
-                                            getTrackDataByStep(j) && "bg-green-100",
-                                        )}
-                                    >
-                                        <div
-                                            className={
-                                                "w-full flex items-center justify-center gap-1"
-                                            }
-                                        >
-                                            <Button
-                                                onClick={() => setChangeChord(j)}
-                                                variant={"outline"}
-                                                size={"icon"}
-                                            >
-                                                {getTrackDataByStep(j) ? (
-                                                    <Pencil className="h-3 w-3" />
-                                                ) : (
-                                                    <Plus className="h-3 w-3" />
-                                                )}
-                                            </Button>
-                                            {getTrackDataByStep(j)?.name && (
-                                                <Badge variant={"outline"}>
-                                                    {getTrackDataByStep(j)?.name}
-                                                </Badge>
-                                            )}
-                                            {getTrackDataByStep(j) && (
-                                                <Button
-                                                    onClick={() => handleDeleteChord(j)}
-                                                    variant={"destructive"}
-                                                    size={"icon"}
-                                                >
-                                                    <Trash className="h-3 w-3" />
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </td>
-                                ))}
-                            </tr>
-                        </tbody>
-                    </table>
-                </CardContent>
-            </Card>
-            <CommandDialog
-                open={changeChord !== null}
-                onOpenChange={(open) => setChangeChord(open ? 0 : null)}
+        <div ref={scrollRef} className="daw-scroll relative min-h-0 flex-1 overflow-auto">
+            <div
+                className="grid"
+                style={{
+                    width: KEY_W + gridW,
+                    gridTemplateColumns: `${KEY_W}px ${gridW}px`,
+                    gridTemplateRows: `${RULER_H}px ${LANE_H}px auto`,
+                }}
             >
-                <Command>
-                    <CommandInput placeholder="Type a command or search..." />
-                    <CommandList>
-                        <CommandEmpty>No results found.</CommandEmpty>
-                        {listNotes.map((note) => (
-                            <CommandGroup heading={note} key={note}>
-                                {Object.keys(ListChordsByNotes[note]).map((chord) => (
-                                    <CommandItem
-                                        key={chord}
-                                        className="cursor-pointer"
-                                        onSelect={() => {
-                                            handleChangeChordSelected(note, chord);
-                                        }}
-                                    >
-                                        {chord}
-                                    </CommandItem>
-                                ))}
-                            </CommandGroup>
+                {/* Ruler */}
+                <div className="sticky top-0 left-0 z-30 border-r border-b border-daw-edge bg-daw-bar" />
+                <div className="sticky top-0 z-20 border-b border-daw-edge bg-daw-bar">
+                    <div className="relative h-full" style={gridLines(measureW, colW, "#4a4a50", "#36363b")}>
+                        {[...Array(nbrMeasures).keys()].map((measure) => (
+                            <span
+                                key={measure}
+                                className="absolute top-1.5 font-mono text-[11px] font-bold text-daw-sub"
+                                style={{ left: measure * measureW + 6 }}
+                            >
+                                {measure + 1}
+                            </span>
                         ))}
-                    </CommandList>
-                </Command>
-            </CommandDialog>
-        </>
+                        <Playhead x={playX} />
+                    </div>
+                </div>
+
+                {/* Chord track */}
+                <div
+                    className="sticky left-0 z-30 flex items-center justify-center border-r border-b border-daw-edge bg-[#26262a] text-[10px] font-semibold tracking-widest text-daw-muted"
+                    style={{ top: RULER_H }}
+                >
+                    CHORDS
+                </div>
+                <div className="sticky z-20 border-b border-daw-edge bg-[#202023]" style={{ top: RULER_H }}>
+                    <div className="relative h-full" style={gridLines(measureW, colW, "#3a3a3f", "#2b2b2f")}>
+                        {steps.map((step) => (
+                            <button
+                                key={step}
+                                type="button"
+                                aria-label={`Bar ${Math.floor(step / nbrSteps) + 1}, step ${(step % nbrSteps) + 1}`}
+                                onClick={() => setSelectedStep(step)}
+                                className={cn(
+                                    "absolute inset-y-0 hover:bg-white/5",
+                                    selectedStep === step && !selectedChord && "bg-daw-select/25",
+                                )}
+                                style={{ left: step * colW, width: colW }}
+                            />
+                        ))}
+                        {trackData.map((data) => (
+                            <button
+                                key={data.step}
+                                type="button"
+                                onClick={(e) => {
+                                    // A click past the first step selects that step, so a chord can split this one.
+                                    const offset = e.clientX - e.currentTarget.getBoundingClientRect().left + 2;
+                                    setSelectedStep(data.step + Math.min(data.len - 1, Math.floor(offset / colW)));
+                                }}
+                                className={cn(
+                                    "absolute top-1.75 flex h-9.5 flex-col items-start justify-center overflow-hidden rounded-md border-2 border-transparent bg-daw-accent px-2 text-left text-daw-accent-ink",
+                                    selectedStep === data.step && "border-white",
+                                )}
+                                style={{ left: data.step * colW + 2, width: data.len * colW - 4 }}
+                            >
+                                <span className="text-[13px] leading-tight font-bold">{data.name}</span>
+                                <span className="font-mono text-[10px] whitespace-nowrap">{data.chord.join(" ")}</span>
+                            </button>
+                        ))}
+                        <Playhead x={playX} />
+                    </div>
+                </div>
+
+                {/* Keyboard */}
+                <div className="sticky left-0 z-10 border-r border-daw-edge">
+                    {rows.map((row, i) => (
+                        <div
+                            key={i}
+                            className={cn(
+                                "flex items-center justify-end border-b pr-1.5 text-[10px] font-semibold",
+                                row.black
+                                    ? "border-black bg-daw-well text-[#8e8e93]"
+                                    : "border-[#c7c7cc] bg-[#e9e9ec] text-[#3a3a3d]",
+                                row.name === "C" && "border-[#8e8e93]",
+                                row.inSelectedChord && "bg-daw-accent text-daw-accent-ink",
+                            )}
+                            style={{ height: ROW_H }}
+                        >
+                            {row.name === "C" && `C${row.octave}`}
+                        </div>
+                    ))}
+                </div>
+
+                {/* Piano roll */}
+                <div className="relative">
+                    {rows.map((row, i) => (
+                        <div
+                            key={i}
+                            className={cn(
+                                "border-b",
+                                row.black ? "bg-[#1e1e21]" : row.octave === octave ? "bg-[#29292d]" : "bg-[#252528]",
+                                row.name === "C" ? "border-daw-line" : "border-[#1a1a1c]",
+                            )}
+                            style={{ height: ROW_H }}
+                        />
+                    ))}
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0"
+                        style={gridLines(measureW, colW, "#45454b", "#303035")}
+                    />
+                    {highlight && (
+                        <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-y-0 border-x border-daw-select/60 bg-daw-select/12"
+                            style={{ left: highlight.x, width: highlight.w }}
+                        />
+                    )}
+                    {trackData.flatMap((data) =>
+                        data.chord.map((note) => (
+                            <div
+                                key={`${data.step}-${note}`}
+                                className="absolute flex h-4 items-center overflow-hidden rounded bg-daw-accent pl-1.5 text-[10px] font-bold text-daw-accent-ink shadow-[inset_0_-2px_0_rgba(0,0,0,0.25)]"
+                                style={{
+                                    top: rowOf(note) * ROW_H + 2,
+                                    left: data.step * colW + 2,
+                                    width: data.len * colW - 4,
+                                }}
+                            >
+                                {data.len * colW > 36 && `${note}${octave}`}
+                            </div>
+                        )),
+                    )}
+                    <Playhead x={playX} />
+                </div>
+            </div>
+        </div>
     );
 };

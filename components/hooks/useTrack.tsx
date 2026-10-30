@@ -4,47 +4,59 @@ import { TrackContext, TTrackData } from "../providers/Track.provider";
 export const useTrack = () => {
     const { trackData, setTrackData } = useContext(TrackContext);
 
-    const handleChangeChord = (chord: string[], step: number, name?: string): TTrackData[] => {
-        const newtrackData: TTrackData[] = trackData.map((data) => {
-            if (data.step === step) {
-                return {
-                    step,
-                    chord,
-                    name,
-                };
-            }
-            return data;
-        });
+    /** The chord sounding at `step`, whether it starts there or earlier. */
+    const getChordAt = (step: number) =>
+        trackData.find((data) => step >= data.step && step < data.step + data.len) ?? null;
 
-        const isStepAlreadyInTrack = trackData.some((data) => data.step === step);
+    /**
+     * Places a chord at `step`. It lasts until the next chord, at most `maxLen` steps,
+     * and shortens a previous chord that would overlap it.
+     */
+    const handleChangeChord = (
+        chord: string[],
+        step: number,
+        name: string | undefined,
+        maxLen: number,
+        totalSteps: number,
+    ) => {
+        const others = trackData
+            .filter((data) => data.step !== step)
+            .map((data) =>
+                data.step < step && data.step + data.len > step
+                    ? { ...data, len: step - data.step }
+                    : data,
+            );
+        const nextStep = Math.min(
+            totalSteps,
+            ...others.filter((data) => data.step > step).map((data) => data.step),
+        );
+        const len = Math.max(1, Math.min(maxLen, nextStep - step));
 
-        if (!isStepAlreadyInTrack) {
-            newtrackData.push({
-                step,
-                chord,
-                name,
-            });
-        }
-
-        setTrackData(newtrackData);
-        return newtrackData;
+        setTrackData([...others, { step, len, chord, name }].sort((a, b) => a.step - b.step));
     };
 
-    const getChordAtStep = (step: number) => {
-        const chordData = trackData.find((data) => data.step === step);
-        return chordData ? chordData.chord : null;
+    const handleDeleteChord = (step: number) => {
+        setTrackData(trackData.filter((data) => data.step !== step));
     };
 
-    const handleDeleteChord = (step: number): TTrackData[] => {
-        const newtrackData = trackData.filter((data) => data.step !== step);
-        setTrackData(newtrackData);
-        return newtrackData;
+    /** Keeps chords at the same musical position when the steps per measure change. */
+    const handleRescale = (ratio: number, totalSteps: number) => {
+        const rescaled: TTrackData[] = trackData
+            .map((data) => ({
+                ...data,
+                step: Math.round(data.step * ratio),
+                len: Math.max(1, Math.round(data.len * ratio)),
+            }))
+            .filter((data) => data.step < totalSteps)
+            .map((data) => ({ ...data, len: Math.min(data.len, totalSteps - data.step) }));
+        setTrackData(rescaled);
     };
 
     return {
         trackData,
-        getChordAtStep,
+        getChordAt,
         handleChangeChord,
         handleDeleteChord,
+        handleRescale,
     };
 };

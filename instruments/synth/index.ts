@@ -1,25 +1,10 @@
 import * as Tone from "tone";
-import { EventMidiPlayer, Instrument } from "../instrument";
+import { Instrument } from "../instrument";
 
 export class InstruSynth extends Instrument {
-    public instrument: Tone.Synth | null = null;
-    private tone = Tone;
+    protected instrument: Tone.PolySynth | null = null;
 
-    init = async () => {
-        this.tone.start();
-        return (this.instrument = new this.tone.Synth().toDestination());
-    };
-
-    playKey = (event: EventMidiPlayer) => {
-        if (!this.instrument) {
-            return;
-        }
-        const safeEvent = this.checkEventKey(event, this.instrument);
-        if (!safeEvent) {
-            return;
-        }
-
-        const { noteName, velocity } = safeEvent;
-        return this.instrument.triggerAttackRelease(noteName, "8n", this.tone.now(), velocity);
-    };
+    init() {
+        this.instrument = new Tone.PolySynth(Tone.Synth).toDestination();
+    }
 }

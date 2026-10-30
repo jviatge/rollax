@@ -29,8 +29,6 @@ export default async function Home() {
     const listChordsByNotes = await getListChordsByNotes(listNotes);
 
     return (
-        <main className="flex min-h-screen min-w-screen flex items-center justify-center">
-            <PageClient listNotes={listNotes} ListChordsByNotes={listChordsByNotes} />
-        </main>
+        <PageClient listNotes={listNotes} ListChordsByNotes={listChordsByNotes} />
     );
 }
