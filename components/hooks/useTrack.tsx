@@ -44,6 +44,10 @@ export const useTrack = () => {
         );
     };
 
+    const handleReplaceTrack = (track: TTrackData[]) => {
+        setTrackData([...track].sort((a, b) => a.step - b.step));
+    };
+
     const handleDeleteChord = (step: number) => {
         setTrackData(trackData.filter((data) => data.step !== step));
     };
@@ -66,6 +70,7 @@ export const useTrack = () => {
         getChordAt,
         handleChangeChord,
         handleMoveChord,
+        handleReplaceTrack,
         handleDeleteChord,
         handleRescale,
     };

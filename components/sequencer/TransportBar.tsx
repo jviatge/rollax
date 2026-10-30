@@ -10,7 +10,10 @@ import {
     Square,
     WandSparkles,
 } from "lucide-react";
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
+import { useTrack } from "../hooks/useTrack";
+import { generateProgression, PROGRESSIONS } from "./generate";
+import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
 
 const isTypingTarget = (target: EventTarget | null) =>
@@ -41,7 +44,30 @@ export const TransportBar = () => {
         handleStop,
         handlePreviousMeasure,
         handleNextMeasure,
+        nbrMeasures,
+        setSelectedStep,
     } = useSequencer();
+    const { ListChordsByNotes } = useChord();
+    const { handleReplaceTrack } = useTrack();
+    const lastProgressionRef = useRef<number | null>(null);
+
+    // Replaces the track with a random progression, never the same one twice in a row.
+    const handleGenerate = () => {
+        const choices = PROGRESSIONS.map((_, i) => i).filter((i) => i !== lastProgressionRef.current);
+        const progressionIndex = choices[Math.floor(Math.random() * choices.length)];
+        lastProgressionRef.current = progressionIndex;
+        handleReplaceTrack(
+            generateProgression({
+                library: ListChordsByNotes,
+                tonic: fundamentalNote,
+                progressionIndex,
+                nbrMeasures,
+                nbrSteps,
+                withSeventh: Math.random() < 0.3,
+            }),
+        );
+        setSelectedStep(null);
+    };
 
     const togglePlayback = useEffectEvent(() => (isPlaying ? handlePause() : handlePlay()));
 
@@ -125,9 +151,9 @@ export const TransportBar = () => {
             <div className="flex justify-end gap-2">
                 <button
                     type="button"
-                    disabled
-                    title="Not available yet"
-                    className="flex h-8.5 items-center gap-2 rounded-[7px] border border-daw-accent px-3.5 font-semibold text-daw-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={handleGenerate}
+                    title={`Generate a chord progression in ${fundamentalNote} major`}
+                    className="flex h-8.5 items-center gap-2 rounded-[7px] border border-daw-accent px-3.5 font-semibold text-daw-accent hover:bg-daw-accent/10"
                 >
                     <WandSparkles className="size-4" />
                     Generate

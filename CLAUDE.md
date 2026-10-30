@@ -4,7 +4,7 @@
 
 - Read `README.md` for the project overview, commands, current functionality, known limitations, and architecture.
 - Keep `README.md` and this file aligned with the implementation when behavior, architecture, or setup changes. Use the `update-project-docs` skill for a documentation refresh.
-- Treat the source code and package scripts as authoritative. Do not document unfinished UI controls (Generate, Export MIDI) as working features.
+- Treat the source code and package scripts as authoritative. Do not document unfinished UI controls (Export MIDI) as working features.
 - This project uses Next.js 16. Before changing Next.js code, read the relevant guide in `node_modules/next/dist/docs/` and follow its current APIs.
 
 ## Conventions
