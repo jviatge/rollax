@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { useTrack } from "../hooks/useTrack";
-import { generateProgression, PROGRESSIONS } from "./generate";
+import { generateProgression, measureSegments, PROGRESSIONS } from "./generate";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
 
@@ -41,29 +41,34 @@ export const TransportBar = () => {
         handleStop,
         handlePreviousMeasure,
         handleNextMeasure,
-        nbrMeasures,
+        totalSteps,
+        selectedArea,
         setSelectedStep,
     } = useSequencer();
     const { ListChordsByNotes } = useChord();
-    const { handleReplaceTrack } = useTrack();
+    const { handleReplaceTrack, handleReplaceRange } = useTrack();
     const lastProgressionRef = useRef<number | null>(null);
 
-    // Replaces the track with a random progression, never the same one twice in a row.
+    // Fills the selected steps, or the whole track, with a random progression, never the same one
+    // twice in a row.
     const handleGenerate = () => {
         const choices = PROGRESSIONS.map((_, i) => i).filter((i) => i !== lastProgressionRef.current);
         const progressionIndex = choices[Math.floor(Math.random() * choices.length)];
         lastProgressionRef.current = progressionIndex;
-        handleReplaceTrack(
-            generateProgression({
-                library: ListChordsByNotes,
-                tonic: fundamentalNote,
-                progressionIndex,
-                nbrMeasures,
-                nbrSteps,
-                withSeventh: Math.random() < 0.3,
-            }),
-        );
-        setSelectedStep(null);
+        const { start, end } = selectedArea ?? { start: 0, end: totalSteps };
+        const chords = generateProgression({
+            library: ListChordsByNotes,
+            tonic: fundamentalNote,
+            progressionIndex,
+            segments: measureSegments(start, end, nbrSteps),
+            withSeventh: Math.random() < 0.3,
+        });
+        if (selectedArea) {
+            handleReplaceRange(start, end, chords);
+        } else {
+            handleReplaceTrack(chords);
+            setSelectedStep(null);
+        }
     };
 
     const togglePlayback = useEffectEvent(() => (isPlaying ? handlePause() : handlePlay()));
@@ -149,7 +154,7 @@ export const TransportBar = () => {
                 <button
                     type="button"
                     onClick={handleGenerate}
-                    title={`Generate a chord progression in ${fundamentalNote} major`}
+                    title={`Generate a chord progression in ${fundamentalNote} major ${selectedArea ? "in the selection" : "on the whole track"}`}
                     className="flex h-8.5 items-center gap-2 rounded-[7px] border border-daw-accent px-3.5 font-semibold text-daw-accent hover:bg-daw-accent/10"
                 >
                     <WandSparkles className="size-4" />

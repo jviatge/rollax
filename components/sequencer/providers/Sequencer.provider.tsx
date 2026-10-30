@@ -24,6 +24,12 @@ type TSequencerContext = {
     setFundamentalNote: (note: string) => void;
     selectedStep: number | null;
     setSelectedStep: (step: number | null) => void;
+    /** Steps `start` to `end` (exclusive) when more than one step is selected. */
+    selectedRange: { start: number; end: number } | null;
+    /** The steps the selection covers: the range, the chord starting on the selected step, or the step. */
+    selectedArea: { start: number; end: number } | null;
+    /** Selects from the selected step to `step`, or just `step` when nothing is selected. */
+    extendSelection: (step: number) => void;
     isPlaying: boolean;
     isPaused: boolean;
     playStep: number;
@@ -47,7 +53,8 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     const [nbrMeasures, setNbrMeasures] = useState(4);
     const [nbrSteps, setNbrSteps] = useState(4);
     const [fundamentalNote, setFundamentalNote] = useState("C");
-    const [selectedStep, setSelectedStep] = useState<number | null>(null);
+    const [selectedStep, setSelectedAnchor] = useState<number | null>(null);
+    const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [playStep, setPlayStep] = useState(0);
@@ -56,6 +63,29 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     const octave = 4;
     const totalSteps = nbrSteps * nbrMeasures;
     const instrumentRef = useRef<Instrument | null>(null);
+    const selectedRange =
+        selectedStep !== null && selectionEnd !== null && selectionEnd !== selectedStep
+            ? { start: Math.min(selectedStep, selectionEnd), end: Math.max(selectedStep, selectionEnd) + 1 }
+            : null;
+
+    const chordOnStep = trackData.find((data) => data.step === selectedStep);
+    const selectedArea =
+        selectedRange ??
+        (chordOnStep
+            ? { start: chordOnStep.step, end: chordOnStep.step + chordOnStep.len }
+            : selectedStep !== null
+              ? { start: selectedStep, end: selectedStep + 1 }
+              : null);
+
+    const setSelectedStep = (step: number | null) => {
+        setSelectedAnchor(step);
+        setSelectionEnd(null);
+    };
+
+    const extendSelection = (step: number) => {
+        if (selectedStep === null) setSelectedAnchor(step);
+        setSelectionEnd(step);
+    };
 
     /** Transport ticks in one grid step (a step is a 1/nbrSteps note). */
     const getStepTicks = useCallback(() => (Tone.getTransport().PPQ * 4) / nbrSteps, [nbrSteps]);
@@ -207,6 +237,9 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
                 setFundamentalNote,
                 selectedStep,
                 setSelectedStep,
+                selectedRange,
+                selectedArea,
+                extendSelection,
                 isPlaying,
                 isPaused,
                 playStep,

@@ -66,6 +66,22 @@ export const useTrack = () => {
         setTrackData([...track].sort((a, b) => a.step - b.step));
     };
 
+    /**
+     * Replaces the chords between `start` and `end` (exclusive) with `chords`. Chords crossing an edge
+     * of the range are cut back to the part outside it.
+     */
+    const handleReplaceRange = (start: number, end: number, chords: TTrackData[]) => {
+        const outside = trackData.flatMap((data) => {
+            const dataEnd = data.step + data.len;
+            if (dataEnd <= start || data.step >= end) return [data];
+            const parts: TTrackData[] = [];
+            if (data.step < start) parts.push({ ...data, len: start - data.step });
+            if (dataEnd > end) parts.push({ ...data, step: end, len: dataEnd - end });
+            return parts;
+        });
+        setTrackData([...outside, ...chords].sort((a, b) => a.step - b.step));
+    };
+
     const handleDeleteChord = (step: number) => {
         setTrackData(trackData.filter((data) => data.step !== step));
     };
@@ -94,6 +110,7 @@ export const useTrack = () => {
         getChordBounds,
         handleResizeChord,
         handleReplaceTrack,
+        handleReplaceRange,
         handleDeleteChord,
         handleRescale,
         undo,

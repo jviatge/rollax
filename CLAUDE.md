@@ -17,7 +17,7 @@
 ## Sequencer state
 
 - The track (the placed chords, each with a start `step` and a `len` in steps) lives in `TrackProvider` (`components/providers/`). Edit it only through `useTrack`, which keeps chords from overlapping. Every `setTrackData` call is an undo step; pass `{ record: false }` for changes that invalidate the history (grid rescaling clears it). Commit drag previews once, on release, so a gesture is one undo step.
-- Grid and playback settings, the selected step, and the audio engine live in `SequencerProvider` (`components/sequencer/providers/`). Playback is scheduled with the Tone.js transport: the provider rebuilds a `Tone.Part` from the track on every change, so components only need to update the track.
+- Grid and playback settings, the selection (`selectedStep` is the anchor; `selectedRange` is set when more than one step is selected), and the audio engine live in `SequencerProvider` (`components/sequencer/providers/`). Playback is scheduled with the Tone.js transport: the provider rebuilds a `Tone.Part` from the track on every change, so components only need to update the track.
 - The playhead reads `getPlayPosition()` (fractional steps) every frame and moves itself with `transform`; don't put a per-frame position in React state.
 - One step is `PPQ * 4 / nbrSteps` transport ticks (4/4 time). Keep that conversion in the provider.
 - To add an instrument, extend `Instrument` in `instruments/`, register it in `instruments/index.ts`, and add it to `TInstrumentType` and the instrument control in `Inspector`.

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { noteIndex, notes } from "@/notes";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { TTrackData } from "../providers/Track.provider";
 import { useTrack } from "../hooks/useTrack";
 import { getChordDrag, hasChordDrag, setChordDrag } from "./chordDrag";
@@ -59,12 +59,29 @@ const DropPreview = ({ x, w }: { x: number; w: number }) => (
 type TResize = { fromStep: number; edge: "start" | "end"; step: number; len: number };
 
 export const GridSequencer = () => {
-    const { nbrSteps, nbrMeasures, totalSteps, nbrNotes, octave, selectedStep, setSelectedStep } =
-        useSequencer();
-    const { trackData, handleChangeChord, handleMoveChord, getChordBounds, handleResizeChord } = useTrack();
+    const {
+        nbrSteps,
+        nbrMeasures,
+        totalSteps,
+        nbrNotes,
+        octave,
+        selectedStep,
+        setSelectedStep,
+        selectedRange,
+        extendSelection,
+    } = useSequencer();
+    const {
+        trackData,
+        handleChangeChord,
+        handleMoveChord,
+        getChordBounds,
+        handleResizeChord,
+    } = useTrack();
     const [dragStep, setDragStep] = useState<number | null>(null);
     const [resize, setResize] = useState<TResize | null>(null);
+    const [selecting, setSelecting] = useState(false);
     const laneRef = useRef<HTMLDivElement>(null);
+    const rulerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [viewW, setViewW] = useState(0);
     const baseOctave = octave - 1;
@@ -82,6 +99,27 @@ export const GridSequencer = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const clearSelection = useEffectEvent(() => setSelectedStep(null));
+
+    // A press outside the ruler and the chord track, or Escape, clears the selection. Controls are
+    // left out so they can act on it, and so is the grid's own scrollbar.
+    useEffect(() => {
+        const handlePointer = (e: PointerEvent) => {
+            const target = e.target;
+            if (!(target instanceof Element) || target === scrollRef.current) return;
+            if (laneRef.current?.contains(target) || rulerRef.current?.contains(target)) return;
+            if (target.closest("button, input, select, textarea, a, label, [draggable='true']")) return;
+            clearSelection();
+        };
+        const handleKey = (e: KeyboardEvent) => e.key === "Escape" && clearSelection();
+        window.addEventListener("pointerdown", handlePointer);
+        window.addEventListener("keydown", handleKey);
+        return () => {
+            window.removeEventListener("pointerdown", handlePointer);
+            window.removeEventListener("keydown", handleKey);
+        };
+    }, []);
+
     const colW = Math.max(MIN_COL_W, Math.floor((viewW - KEY_W) / totalSteps) || MIN_COL_W);
     const gridW = colW * totalSteps;
     const measureW = colW * nbrSteps;
@@ -91,7 +129,7 @@ export const GridSequencer = () => {
             ? { ...data, id: data.step, step: resize.step, len: resize.len }
             : { ...data, id: data.step },
     );
-    const selectedChord = shownTrack.find((data) => data.id === selectedStep);
+    const selectedChord = selectedRange ? undefined : shownTrack.find((data) => data.id === selectedStep);
     const selectedNotes = new Set(selectedChord?.chord.map(noteIndex) ?? []);
     const steps = [...Array(totalSteps).keys()];
 
@@ -108,11 +146,14 @@ export const GridSequencer = () => {
         };
     });
     const rowOf = (note: string) => nbrNotes - 1 - ((octave - baseOctave) * 12 + noteIndex(note));
-    const highlight = selectedChord
-        ? { x: selectedChord.step * colW, w: selectedChord.len * colW }
-        : selectedStep !== null
-          ? { x: selectedStep * colW, w: colW }
-          : null;
+    const highlight = selectedRange
+        ? { x: selectedRange.start * colW, w: (selectedRange.end - selectedRange.start) * colW }
+        : selectedChord
+          ? { x: selectedChord.step * colW, w: selectedChord.len * colW }
+          : selectedStep !== null
+            ? { x: selectedStep * colW, w: colW }
+            : null;
+    const inRange = (step: number) => !!selectedRange && step >= selectedRange.start && step < selectedRange.end;
 
     // The chord track and the piano roll both start at the grid origin, so the step under
     // the pointer comes from its x offset.
@@ -121,6 +162,29 @@ export const GridSequencer = () => {
             totalSteps - 1,
             Math.max(0, Math.floor((e.clientX - e.currentTarget.getBoundingClientRect().left) / colW)),
         );
+    // The ruler and the chord track share the grid origin, so either gives the step under the pointer.
+    const laneStepAt = (clientX: number) =>
+        Math.min(
+            totalSteps - 1,
+            Math.max(0, Math.floor((clientX - (laneRef.current?.getBoundingClientRect().left ?? 0)) / colW)),
+        );
+    // Pressing a step selects it, and dragging across empty steps or the ruler, or Shift-clicking,
+    // selects a range.
+    const startSelect = (e: React.PointerEvent<HTMLElement>, step = laneStepAt(e.clientX)) => {
+        if (e.button !== 0) return;
+        if (e.shiftKey) extendSelection(step);
+        else setSelectedStep(step);
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setSelecting(true);
+    };
+    const moveSelect = (e: React.PointerEvent<HTMLElement>) => {
+        if (selecting) extendSelection(laneStepAt(e.clientX));
+    };
+    const selectHandlers = {
+        onPointerMove: moveSelect,
+        onPointerUp: () => setSelecting(false),
+        onPointerCancel: () => setSelecting(false),
+    };
     const startResize = (e: React.PointerEvent<HTMLSpanElement>, data: TTrackData, edge: TResize["edge"]) => {
         e.preventDefault();
         e.stopPropagation();
@@ -189,7 +253,20 @@ export const GridSequencer = () => {
                 {/* Ruler */}
                 <div className="sticky top-0 left-0 z-30 border-r border-b border-daw-edge bg-daw-bar" />
                 <div className="sticky top-0 z-20 border-b border-daw-edge bg-daw-bar">
-                    <div className="relative h-full" style={gridLines(measureW, colW, "#4a4a50", "#36363b")}>
+                    <div
+                        ref={rulerRef}
+                        className="relative h-full cursor-text touch-none select-none"
+                        style={gridLines(measureW, colW, "#4a4a50", "#36363b")}
+                        onPointerDown={(e) => startSelect(e)}
+                        {...selectHandlers}
+                    >
+                        {highlight && (
+                            <div
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-y-1 rounded-sm bg-daw-select/40"
+                                style={{ left: highlight.x, width: highlight.w }}
+                            />
+                        )}
                         {[...Array(nbrMeasures).keys()].map((measure) => (
                             <span
                                 key={measure}
@@ -222,10 +299,13 @@ export const GridSequencer = () => {
                                 key={step}
                                 type="button"
                                 aria-label={`Bar ${Math.floor(step / nbrSteps) + 1}, step ${(step % nbrSteps) + 1}`}
-                                onClick={() => setSelectedStep(step)}
+                                onPointerDown={(e) => startSelect(e, step)}
+                                {...selectHandlers}
+                                // Keyboard activation; pointer presses are handled above.
+                                onClick={(e) => e.detail === 0 && setSelectedStep(step)}
                                 className={cn(
-                                    "absolute inset-y-0 hover:bg-white/5",
-                                    selectedStep === step && !selectedChord && "bg-daw-select/25",
+                                    "absolute inset-y-0 touch-none hover:bg-white/5",
+                                    (inRange(step) || (selectedStep === step && !selectedChord)) && "bg-daw-select/25",
                                 )}
                                 style={{ left: step * colW, width: colW }}
                             />
@@ -243,12 +323,11 @@ export const GridSequencer = () => {
                                     onClick={(e) => {
                                         // A click past the first step selects that step, so a chord can split this one.
                                         const offset = e.clientX - e.currentTarget.getBoundingClientRect().left + 2;
-                                        setSelectedStep(data.step + Math.min(data.len - 1, Math.floor(offset / colW)));
+                                        const step = data.step + Math.min(data.len - 1, Math.floor(offset / colW));
+                                        if (e.shiftKey) extendSelection(step);
+                                        else setSelectedStep(step);
                                     }}
-                                    className={cn(
-                                        "flex size-full cursor-grab flex-col items-start justify-center overflow-hidden rounded-md border-2 border-transparent bg-daw-accent px-2.5 text-left text-daw-accent-ink active:cursor-grabbing",
-                                        selectedStep === data.id && "border-white",
-                                    )}
+                                    className="flex size-full cursor-grab flex-col items-start justify-center overflow-hidden rounded-md bg-daw-accent px-3 text-left text-daw-accent-ink active:cursor-grabbing"
                                 >
                                     <span className="text-[13px] leading-tight font-bold">{data.name}</span>
                                     <span className="font-mono text-[10px] whitespace-nowrap">{data.chord.join(" ")}</span>
@@ -276,6 +355,13 @@ export const GridSequencer = () => {
                                 ))}
                             </div>
                         ))}
+                        {highlight && (
+                            <div
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-y-0 z-10 rounded-sm border-2 border-daw-select bg-daw-select/15"
+                                style={{ left: highlight.x, width: highlight.w }}
+                            />
+                        )}
                         {dropPreview}
                         <Playhead colW={colW} />
                     </div>

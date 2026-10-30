@@ -65,10 +65,12 @@ export const Inspector = () => {
         fundamentalNote,
         setFundamentalNote,
         selectedStep,
+        selectedRange,
     } = useSequencer();
     const { trackData, getChordAt, handleDeleteChord } = useTrack();
     const [tempoDraft, setTempoDraft] = useState(String(tempo));
-    const selectedChord = trackData.find((data) => data.step === selectedStep);
+    const selectedChord = selectedRange ? undefined : trackData.find((data) => data.step === selectedStep);
+    const stepLabel = (step: number) => `Bar ${Math.floor(step / nbrSteps) + 1} · Step ${(step % nbrSteps) + 1}`;
 
     const commitTempo = () => {
         const value = Math.min(240, Math.max(40, Number(tempoDraft) || tempo));
@@ -135,9 +137,11 @@ export const Inspector = () => {
             <section className="flex flex-col gap-3 p-4">
                 <SectionTitle>Selected step</SectionTitle>
                 <div className="font-mono text-xs text-daw-sub">
-                    {selectedStep === null
-                        ? "No step selected"
-                        : `Bar ${Math.floor(selectedStep / nbrSteps) + 1} · Step ${(selectedStep % nbrSteps) + 1}`}
+                    {selectedRange
+                        ? `${stepLabel(selectedRange.start)} – ${stepLabel(selectedRange.end - 1)}`
+                        : selectedStep === null
+                          ? "No step selected"
+                          : stepLabel(selectedStep)}
                 </div>
                 {selectedChord ? (
                     <div className="flex flex-col gap-3 rounded-[10px] border border-daw-raised bg-[#1a1a1c] p-3.5">
@@ -160,11 +164,13 @@ export const Inspector = () => {
                     </div>
                 ) : (
                     <p className="rounded-[10px] border border-dashed border-daw-line p-3.5 leading-normal text-daw-muted">
-                        {selectedStep === null
-                            ? "Click a chord or a step on the chord track to select it."
-                            : getChordAt(selectedStep)
-                              ? `Inside ${getChordAt(selectedStep)?.name}. Drop a chord here to split it.`
-                              : "Empty step. Drag a chord from the library onto it."}
+                        {selectedRange
+                            ? `${selectedRange.end - selectedRange.start} steps selected. Generate fills them with a progression, one chord per measure.`
+                            : selectedStep === null
+                              ? "Click a chord or a step on the chord track to select it. Drag across steps or Shift-click to select several."
+                              : getChordAt(selectedStep)
+                                ? `Inside ${getChordAt(selectedStep)?.name}. Drop a chord here to split it.`
+                                : "Empty step. Drag a chord from the library onto it, or click Generate."}
                     </p>
                 )}
             </section>

@@ -38,29 +38,42 @@ const findChord = (library: TChordLibrary, index: number, suffix: string) => {
     return null;
 };
 
+type TSegment = { step: number; len: number; measure: number };
+
+/** Cuts steps `start` to `end` (exclusive) at the measure lines, so each part gets one chord. */
+export const measureSegments = (start: number, end: number, nbrSteps: number) => {
+    const segments: TSegment[] = [];
+    for (let step = start; step < end; ) {
+        const measure = Math.floor(step / nbrSteps);
+        const next = Math.min(end, (measure + 1) * nbrSteps);
+        segments.push({ step, len: next - step, measure });
+        step = next;
+    }
+    return segments;
+};
+
 /**
- * Builds one chord per measure from the progression at `progressionIndex`, in the major key of
- * `tonic`. The V chord becomes a dominant seventh when `withSeventh` is set.
+ * Builds one chord per segment from the progression at `progressionIndex`, in the major key of
+ * `tonic`. Each segment takes the progression's chord for its measure, so a partial range fits the
+ * whole-track progression. The V chord becomes a dominant seventh when `withSeventh` is set.
  */
 export const generateProgression = ({
     library,
     tonic,
     progressionIndex,
-    nbrMeasures,
-    nbrSteps,
+    segments,
     withSeventh,
 }: {
     library: TChordLibrary;
     tonic: string;
     progressionIndex: number;
-    nbrMeasures: number;
-    nbrSteps: number;
+    segments: TSegment[];
     withSeventh: boolean;
 }): TTrackData[] => {
     const progression = PROGRESSIONS[progressionIndex];
     const tonicIndex = noteIndex(tonic);
 
-    return [...Array(nbrMeasures).keys()].flatMap((measure) => {
+    return segments.flatMap(({ step, len, measure }) => {
         const degree = progression[measure % progression.length];
         const { interval, suffix } = MAJOR_DEGREES[degree];
         const chord = findChord(
@@ -68,8 +81,6 @@ export const generateProgression = ({
             (tonicIndex + interval) % 12,
             degree === 4 && withSeventh ? "7" : suffix,
         );
-        return chord
-            ? [{ step: measure * nbrSteps, len: nbrSteps, chord: chord.notes, name: chord.name }]
-            : [];
+        return chord ? [{ step, len, chord: chord.notes, name: chord.name }] : [];
     });
 };
