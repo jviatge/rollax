@@ -10,8 +10,9 @@ import {
     Square,
     WandSparkles,
 } from "lucide-react";
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useTrack } from "../hooks/useTrack";
+import { notes } from "@/notes";
 import { generateProgression, measureSegments, PROGRESSIONS } from "./generate";
 import { ExportMidiDialog } from "./ExportMidiDialog";
 import { buildMidi, downloadMidi } from "./midi";
@@ -21,11 +22,60 @@ import { useSequencer } from "./hooks/useSequencer";
 const transportButton =
     "flex h-8 w-9 items-center justify-center rounded-md border border-daw-line bg-daw-raised text-daw-text hover:brightness-125";
 
-const LcdCell = ({ value, label, last }: { value: React.ReactNode; label: string; last?: boolean }) => (
-    <div className={cn("flex flex-col justify-center px-4", !last && "border-r border-[#1f2a26]")}>
-        <span className="text-lg leading-tight font-bold tracking-wide">{value}</span>
-        <span className="text-[9px] tracking-widest text-daw-lcd-sub">{label}</span>
-    </div>
+/** A cell of the LCD display; an editable one highlights on hover and while its control has focus. */
+const LcdCell = ({
+    value,
+    label,
+    editable,
+    last,
+}: {
+    value: React.ReactNode;
+    label: string;
+    editable?: boolean;
+    last?: boolean;
+}) => {
+    const Cell = editable ? "label" : "div";
+    return (
+        <Cell
+            className={cn(
+                "relative flex flex-col justify-center px-3.5",
+                !last && "border-r border-[#1f2a26]",
+                editable && "cursor-pointer hover:bg-white/5 focus-within:bg-white/8",
+            )}
+        >
+            <span className="text-lg leading-tight font-bold tracking-wide">{value}</span>
+            <span className="text-[9px] tracking-widest text-daw-lcd-sub">{label}</span>
+        </Cell>
+    );
+};
+
+/** Shows the current option, with an invisible select over the whole cell to pick another one. */
+const LcdSelect = <T extends string | number>({
+    label,
+    value,
+    options,
+    onChange,
+}: {
+    label: string;
+    value: T;
+    options: { value: T; label: string }[];
+    onChange: (value: T) => void;
+}) => (
+    <>
+        {options.find((option) => option.value === value)?.label}
+        <select
+            aria-label={label}
+            value={value}
+            onChange={(e) => onChange(options[e.target.selectedIndex].value)}
+            className="absolute inset-0 cursor-pointer appearance-none opacity-0"
+        >
+            {options.map((option) => (
+                <option key={option.value} value={option.value} className="bg-daw-panel text-daw-text">
+                    {option.label}
+                </option>
+            ))}
+        </select>
+    </>
 );
 
 export const TransportBar = () => {
@@ -34,7 +84,9 @@ export const TransportBar = () => {
         playStep,
         nbrSteps,
         tempo,
+        handleTempoChange,
         fundamentalNote,
+        setFundamentalNote,
         cycle,
         toggleCycle,
         handlePlay,
@@ -43,6 +95,9 @@ export const TransportBar = () => {
         handlePreviousMeasure,
         handleNextMeasure,
         totalSteps,
+        nbrMeasures,
+        handleNbrMeasuresChange,
+        handleNbrStepsChange,
         octave,
         selectedArea,
         setSelectedStep,
@@ -50,6 +105,31 @@ export const TransportBar = () => {
     const { ListChordsByNotes } = useChord();
     const { trackData, handleReplaceTrack, handleReplaceRange } = useTrack();
     const lastProgressionRef = useRef<number | null>(null);
+    const [tempoDraft, setTempoDraft] = useState(String(tempo));
+    const cancelTempoRef = useRef(false);
+
+    const clampTempo = (value: number) => Math.min(240, Math.max(40, value));
+
+    // The typed tempo applies on blur or Enter, kept within 40–240 BPM; Escape restores the current one.
+    const commitTempo = () => {
+        const value = cancelTempoRef.current ? tempo : clampTempo(Number(tempoDraft) || tempo);
+        cancelTempoRef.current = false;
+        handleTempoChange(value);
+        setTempoDraft(String(value));
+    };
+
+    const handleTempoKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            // Arrows step the tempo by 1 (10 with Shift) and apply it right away.
+            e.preventDefault();
+            const step = (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1);
+            const value = clampTempo((Number(tempoDraft) || tempo) + step);
+            handleTempoChange(value);
+            setTempoDraft(String(value));
+        }
+        if (e.key === "Escape") cancelTempoRef.current = true;
+        if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+    };
 
     // Fills the selected steps, or the whole track, with a random progression, never the same one
     // twice in a row.
@@ -149,9 +229,66 @@ export const TransportBar = () => {
                         value={`${Math.floor(playStep / nbrSteps) + 1} . ${(playStep % nbrSteps) + 1}`}
                         label="BAR · STEP"
                     />
-                    <LcdCell value={tempo} label="BPM" />
+                    <LcdCell
+                        editable
+                        label="BPM"
+                        value={
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                autoComplete="off"
+                                spellCheck={false}
+                                aria-label="Tempo (BPM)"
+                                value={tempoDraft}
+                                // Digits only, at most three: the tempo is 40–240 BPM.
+                                onChange={(e) => setTempoDraft(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                                onFocus={(e) => e.target.select()}
+                                onBlur={commitTempo}
+                                onKeyDown={handleTempoKey}
+                                // Sized to the digits plus the 0.025em letter spacing of tracking-wide, so none is clipped.
+                                style={{ width: `calc(${Math.max(1, tempoDraft.length)} * (1ch + 0.025em))` }}
+                                className="cursor-pointer bg-transparent p-0 font-mono text-lg leading-tight font-bold tracking-wide text-daw-lcd-text outline-none focus:cursor-text"
+                            />
+                        }
+                    />
                     <LcdCell value="4/4" label="TIME" />
-                    <LcdCell value={fundamentalNote} label="KEY" last />
+                    <LcdCell
+                        editable
+                        label="BARS"
+                        value={
+                            <LcdSelect
+                                label="Measures"
+                                value={nbrMeasures}
+                                options={[1, 2, 3, 4].map((value) => ({ value, label: String(value) }))}
+                                onChange={handleNbrMeasuresChange}
+                            />
+                        }
+                    />
+                    <LcdCell
+                        editable
+                        label="STEPS"
+                        value={
+                            <LcdSelect
+                                label="Steps per measure"
+                                value={nbrSteps}
+                                options={[2, 4, 8, 16].map((value) => ({ value, label: `1/${value}` }))}
+                                onChange={handleNbrStepsChange}
+                            />
+                        }
+                    />
+                    <LcdCell
+                        editable
+                        last
+                        label="KEY"
+                        value={
+                            <LcdSelect
+                                label="Key"
+                                value={fundamentalNote}
+                                options={notes.map((note) => ({ value: note, label: note }))}
+                                onChange={setFundamentalNote}
+                            />
+                        }
+                    />
                 </div>
             </div>
 

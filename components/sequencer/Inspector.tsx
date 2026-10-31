@@ -1,7 +1,5 @@
 import { cn } from "@/lib/utils";
-import { notes } from "@/notes";
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
 import { useTrack } from "../hooks/useTrack";
 import { useSequencer } from "./hooks/useSequencer";
 
@@ -49,34 +47,17 @@ const Segmented = <T extends string | number>({
     </div>
 );
 
-const fieldClass =
-    "h-8 rounded-md border border-daw-line bg-daw-well px-2.5 text-daw-text disabled:cursor-not-allowed disabled:opacity-50";
-
 export const Inspector = () => {
     const {
         selectedInstrument,
         handleSelectInstrument,
-        tempo,
-        handleTempoChange,
-        nbrMeasures,
-        handleNbrMeasuresChange,
         nbrSteps,
-        handleNbrStepsChange,
-        fundamentalNote,
-        setFundamentalNote,
         selectedStep,
         selectedRange,
     } = useSequencer();
     const { trackData, getChordAt, handleDeleteChord } = useTrack();
-    const [tempoDraft, setTempoDraft] = useState(String(tempo));
     const selectedChord = selectedRange ? undefined : trackData.find((data) => data.step === selectedStep);
     const stepLabel = (step: number) => `Bar ${Math.floor(step / nbrSteps) + 1} · Step ${(step % nbrSteps) + 1}`;
-
-    const commitTempo = () => {
-        const value = Math.min(240, Math.max(40, Number(tempoDraft) || tempo));
-        handleTempoChange(value);
-        setTempoDraft(String(value));
-    };
 
     return (
         <aside className="daw-scroll flex w-67 shrink-0 flex-col overflow-y-auto border-r border-daw-edge bg-daw-panel">
@@ -90,47 +71,6 @@ export const Inspector = () => {
                         { value: "piano", label: "Piano" },
                     ]}
                     onChange={handleSelectInstrument}
-                />
-                <div className="grid grid-cols-2 gap-2.5">
-                    <label className="flex flex-col gap-1.5 text-xs text-daw-sub">
-                        Tempo
-                        <input
-                            type="number"
-                            min={40}
-                            max={240}
-                            value={tempoDraft}
-                            onChange={(e) => setTempoDraft(e.target.value)}
-                            onBlur={commitTempo}
-                            onKeyDown={(e) => e.key === "Enter" && commitTempo()}
-                            className={cn(fieldClass, "font-mono text-[13px]")}
-                        />
-                    </label>
-                    <label className="flex flex-col gap-1.5 text-xs text-daw-sub">
-                        Key
-                        <select
-                            value={fundamentalNote}
-                            onChange={(e) => setFundamentalNote(e.target.value)}
-                            className={cn(fieldClass, "text-[13px]")}
-                        >
-                            {notes.map((note) => (
-                                <option key={note} value={note}>
-                                    {note}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                </div>
-                <Segmented
-                    label="Measures"
-                    value={nbrMeasures}
-                    options={[1, 2, 3, 4].map((value) => ({ value, label: String(value) }))}
-                    onChange={handleNbrMeasuresChange}
-                />
-                <Segmented
-                    label="Steps per measure"
-                    value={nbrSteps}
-                    options={[2, 4, 8, 16].map((value) => ({ value, label: `1/${value}` }))}
-                    onChange={handleNbrStepsChange}
                 />
             </section>
 
