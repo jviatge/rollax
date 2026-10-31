@@ -37,11 +37,13 @@ The app is a full-screen, desktop-only layout (minimum width 1200 px; narrower w
 - **Generate:** replaces the track with a common progression (such as I–V–vi–IV or ii–V–I) in the major key set in the LCD display, one chord per measure lasting the whole measure. With a selection, it only replaces the selected steps (a range, a single step, or a selected chord's steps), with one chord per measure part taken from the measure's place in the progression, and cuts chords that cross the selection edges. Each click picks a different progression than the last one, and the V chord is sometimes a dominant seventh.
 - **Chord library (right):** chords from `chords/`, filtered by root note or by a search across all roots. Drag a chord onto a step of the chord track or the piano roll to place it there; a dashed outline shows the target step. A dropped chord lasts one step and replaces that step; dropping inside a longer chord splits it around the new one.
 - **Export MIDI:** opens a dialog asking for the file name (today's date followed by `-midi` by default; `.mid` is added), then downloads the track as a single-track Standard MIDI File with the chords as they play (octave 4, the current tempo, 4/4) and lasting the whole grid. It is disabled while the track is empty.
+- **Import MIDI:** replaces the composition with a MIDI file (format 0 or 1). When the track has chords, a warning first explains that they will be replaced; the import can be undone. Notes are snapped to the current steps per measure, and each run of steps sounding the same notes becomes a chord, named from the chord library when its notes match one. The file's first tempo and its length (up to 4 measures) are applied. A file that can't be read shows an error and leaves the track unchanged.
 - **Playback:** chords play at their grid position for their length through the Tone.js transport. With loop off, playback stops at the end of the grid.
 
 ### Known limitations
 
 - Chords always play in octave 4, in root position (every note in that octave).
+- Imported chords whose notes match no library chord have no name, notes past 4 measures are dropped, and melodies become a chord per note change.
 - The MIDI file has no instrument (program change): it plays with the receiving software's default sound.
 - The key sets the chord library's root and the key used by Generate, which only generates in major keys. Chord names keep the spelling of the chord files, so some keys show enharmonic names (for example `Db` instead of `C#` in F# major).
 - Placing, moving, and resizing chords needs a mouse: there is no keyboard alternative.
@@ -60,9 +62,9 @@ The app is a full-screen, desktop-only layout (minimum width 1200 px; narrower w
 ## Architecture
 
 - `app/page.tsx` is a Server Component that loads the chord data. `app/page.client.tsx` wraps the sequencer in `TrackProvider`.
-- `components/providers/Track.provider.tsx` holds the track and its undo history, a list of `{ step, len, chord, name }` entries (start step and length in steps), and `components/hooks/useTrack.tsx` edits it (placing, moving, resizing, splitting, deleting, replacing a range, and rescaling chords). The drag-and-drop payload is defined in `components/sequencer/chordDrag.ts`, `components/sequencer/generate.ts` builds Generate's progressions from the chord files, and `components/sequencer/midi.ts` writes the exported MIDI file.
+- `components/providers/Track.provider.tsx` holds the track and its undo history, a list of `{ step, len, chord, name }` entries (start step and length in steps), and `components/hooks/useTrack.tsx` edits it (placing, moving, resizing, splitting, deleting, replacing a range, and rescaling chords). The drag-and-drop payload is defined in `components/sequencer/chordDrag.ts`, `components/sequencer/generate.ts` builds Generate's progressions from the chord files, and `components/sequencer/midi.ts` writes the exported MIDI file and reads imported ones into chords.
 - `components/sequencer/` contains the sequencer:
-  - `TransportBar`, `Inspector`, `GridSequencer`, `ChordLibrary`, `StatusBar`: the UI, laid out in `index.tsx`. `ExportMidiDialog` is the Export MIDI button and its file name dialog.
+  - `TransportBar`, `Inspector`, `GridSequencer`, `ChordLibrary`, `StatusBar`: the UI, laid out in `index.tsx`. `ExportMidiDialog` is the Export MIDI button and its file name dialog, and `ImportMidiDialog` the Import MIDI button with its warning and error dialogs.
   - `providers/Sequencer.provider.tsx`: grid and playback settings, the selected step or range, and the audio engine. It rebuilds a `Tone.Part` whenever the track changes, sets the transport tempo and loop, and follows the transport position for the playhead.
   - `providers/Chord.provider.tsx`: the chord data loaded on the server.
   - `hooks/useSequencer.tsx`: reads the sequencer context.

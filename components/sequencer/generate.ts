@@ -1,7 +1,7 @@
 import { TTrackData } from "@/components/providers/Track.provider";
 import { noteIndex } from "@/notes";
 
-type TChordLibrary = Record<string, Record<string, string[]>>;
+export type TChordLibrary = Record<string, Record<string, string[]>>;
 
 /** Semitones from the tonic and chord suffix for each degree of the major scale (I to vii°). */
 const MAJOR_DEGREES = [

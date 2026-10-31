@@ -15,7 +15,8 @@ import { useTrack } from "../hooks/useTrack";
 import { notes } from "@/notes";
 import { generateProgression, measureSegments, PROGRESSIONS } from "./generate";
 import { ExportMidiDialog } from "./ExportMidiDialog";
-import { buildMidi, downloadMidi } from "./midi";
+import { ImportMidiDialog } from "./ImportMidiDialog";
+import { buildMidi, downloadMidi, midiToTrack, parseMidi } from "./midi";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
 
@@ -153,6 +154,29 @@ export const TransportBar = () => {
             handleReplaceTrack(chords);
             setSelectedStep(null);
         }
+    };
+
+    // Replaces the composition with the file's chords on the current steps per measure, and takes
+    // its tempo and length (up to the 4-measure grid).
+    const handleImport = async (file: File) => {
+        let midi: ReturnType<typeof parseMidi>;
+        try {
+            midi = parseMidi(await file.arrayBuffer());
+        } catch (err) {
+            throw new Error(`${file.name} could not be read as a MIDI file${err instanceof Error ? ` (${err.message})` : ""}.`);
+        }
+        if (midi.notes.length === 0) throw new Error(`${file.name} has no notes to import.`);
+        const { track, nbrMeasures } = midiToTrack({
+            notes: midi.notes,
+            ppq: midi.ppq,
+            nbrSteps,
+            maxMeasures: 4,
+            library: ListChordsByNotes,
+        });
+        if (midi.tempo) handleTempoChange(clampTempo(Math.round(midi.tempo)));
+        handleNbrMeasuresChange(nbrMeasures);
+        handleReplaceTrack(track);
+        setSelectedStep(null);
     };
 
     const handleExport = (filename: string) =>
@@ -307,6 +331,7 @@ export const TransportBar = () => {
                     <WandSparkles className="size-4" />
                     Generate
                 </button>
+                <ImportMidiDialog hasTrack={trackData.length > 0} onImport={handleImport} />
                 <ExportMidiDialog disabled={trackData.length === 0} onExport={handleExport} />
             </div>
         </header>

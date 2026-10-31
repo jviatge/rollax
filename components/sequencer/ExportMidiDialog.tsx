@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { Download } from "lucide-react";
 import { useState } from "react";
 
-const dialogButton = "flex h-8.5 items-center gap-2 rounded-[7px] px-3.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50";
+export const dialogButton = "flex h-8.5 items-center gap-2 rounded-[7px] px-3.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50";
 
 /** Today's local date as YYYY-MM-DD. */
 const today = () => {
