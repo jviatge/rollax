@@ -14,6 +14,7 @@ import {
 import { useEffect, useEffectEvent, useRef } from "react";
 import { useTrack } from "../hooks/useTrack";
 import { generateProgression, measureSegments, PROGRESSIONS } from "./generate";
+import { buildMidi, downloadMidi } from "./midi";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
 
@@ -42,11 +43,12 @@ export const TransportBar = () => {
         handlePreviousMeasure,
         handleNextMeasure,
         totalSteps,
+        octave,
         selectedArea,
         setSelectedStep,
     } = useSequencer();
     const { ListChordsByNotes } = useChord();
-    const { handleReplaceTrack, handleReplaceRange } = useTrack();
+    const { trackData, handleReplaceTrack, handleReplaceRange } = useTrack();
     const lastProgressionRef = useRef<number | null>(null);
 
     // Fills the selected steps, or the whole track, with a random progression, never the same one
@@ -70,6 +72,9 @@ export const TransportBar = () => {
             setSelectedStep(null);
         }
     };
+
+    const handleExport = () =>
+        downloadMidi(buildMidi({ trackData, nbrSteps, totalSteps, tempo, octave }), "rollax.mid");
 
     const togglePlayback = useEffectEvent(() => (isPlaying ? handlePause() : handlePlay()));
 
@@ -162,8 +167,9 @@ export const TransportBar = () => {
                 </button>
                 <button
                     type="button"
-                    disabled
-                    title="Not available yet"
+                    onClick={handleExport}
+                    disabled={trackData.length === 0}
+                    title={trackData.length === 0 ? "Add chords to export them" : "Download the track as a MIDI file"}
                     className="flex h-8.5 items-center gap-2 rounded-[7px] border border-daw-line bg-daw-raised px-3.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     <Download className="size-4" />

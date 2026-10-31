@@ -36,14 +36,15 @@ The app is a full-screen, desktop-only layout (minimum width 1200 px; narrower w
 - **Grid (center):** a bar ruler, a chord track, and a piano roll of 36 rows (C3–B5). Click a chord or a step on the chord track to select it, and drag across the ruler or empty steps, or Shift-click, to select a range of steps. Pressing anywhere else outside the controls, or Escape, clears the selection, and Delete or Backspace deletes what is selected: a whole chord when it is selected from its first step, otherwise only the selected steps, splitting the chord around them; drag a placed chord to move it to another step with its length (shown by the drop preview, cut only at the grid end), replacing the steps it lands on and splitting the chords around them, or drag its left or right edge to resize it. Edges snap to the steps and stop at the grid edges; a resized chord replaces the steps it grows over, splitting the chords there, and the preview shows the result while dragging. The steps stretch to fill the width and only scroll horizontally below 36 px per step. The playhead glides with the transport during playback and stays where it paused. The ruler, chord track, and keyboard stay pinned while scrolling, and the view opens centered on octave 4.
 - **Generate:** replaces the track with a common progression (such as I–V–vi–IV or ii–V–I) in the major key selected in the inspector, one chord per measure lasting the whole measure. With a selection, it only replaces the selected steps (a range, a single step, or a selected chord's steps), with one chord per measure part taken from the measure's place in the progression, and cuts chords that cross the selection edges. Each click picks a different progression than the last one, and the V chord is sometimes a dominant seventh.
 - **Chord library (right):** chords from `chords/`, filtered by root note or by a search across all roots. Drag a chord onto a step of the chord track or the piano roll to place it there; a dashed outline shows the target step. A dropped chord lasts one step and replaces that step; dropping inside a longer chord splits it around the new one.
+- **Export MIDI:** downloads the track as `rollax.mid`, a single-track Standard MIDI File with the chords as they play (octave 4, the current tempo, 4/4) and lasting the whole grid. It is disabled while the track is empty.
 - **Playback:** chords play at their grid position for their length through the Tone.js transport. With loop off, playback stops at the end of the grid.
 
 ### Known limitations
 
 - Chords always play in octave 4, in root position (every note in that octave).
+- The MIDI file has no instrument (program change): it plays with the receiving software's default sound.
 - The key sets the chord library's root and the key used by Generate, which only generates in major keys. Chord names keep the spelling of the chord files, so some keys show enharmonic names (for example `Db` instead of `C#` in F# major).
 - Placing, moving, and resizing chords needs a mouse: there is no keyboard alternative.
-- **Export MIDI** is shown but disabled.
 - The UI is not designed for mobile.
 
 ## Chord data
@@ -59,7 +60,7 @@ The app is a full-screen, desktop-only layout (minimum width 1200 px; narrower w
 ## Architecture
 
 - `app/page.tsx` is a Server Component that loads the chord data. `app/page.client.tsx` wraps the sequencer in `TrackProvider`.
-- `components/providers/Track.provider.tsx` holds the track and its undo history, a list of `{ step, len, chord, name }` entries (start step and length in steps), and `components/hooks/useTrack.tsx` edits it (placing, moving, resizing, splitting, deleting, replacing a range, and rescaling chords). The drag-and-drop payload is defined in `components/sequencer/chordDrag.ts`, and `components/sequencer/generate.ts` builds Generate's progressions from the chord files.
+- `components/providers/Track.provider.tsx` holds the track and its undo history, a list of `{ step, len, chord, name }` entries (start step and length in steps), and `components/hooks/useTrack.tsx` edits it (placing, moving, resizing, splitting, deleting, replacing a range, and rescaling chords). The drag-and-drop payload is defined in `components/sequencer/chordDrag.ts`, `components/sequencer/generate.ts` builds Generate's progressions from the chord files, and `components/sequencer/midi.ts` writes the exported MIDI file.
 - `components/sequencer/` contains the sequencer:
   - `TransportBar`, `Inspector`, `GridSequencer`, `ChordLibrary`, `StatusBar`: the UI, laid out in `index.tsx`.
   - `providers/Sequencer.provider.tsx`: grid and playback settings, the selected step or range, and the audio engine. It rebuilds a `Tone.Part` whenever the track changes, sets the transport tempo and loop, and follows the transport position for the playhead.
