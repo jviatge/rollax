@@ -1,4 +1,4 @@
-import { isTypingTarget } from "@/lib/keyboard";
+import { blocksShortcuts } from "@/lib/keyboard";
 import { createContext, useCallback, useEffect, useState } from "react";
 
 /** A chord placed on the grid, starting at `step` and lasting `len` steps. */
@@ -51,7 +51,7 @@ export const TrackProvider = ({ children }: { children: React.ReactNode }) => {
     // Cmd/Ctrl+Z undoes, Cmd/Ctrl+Shift+Z or Ctrl+Y redoes, except while typing in a field.
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
-            if (!(e.metaKey || e.ctrlKey) || e.altKey || isTypingTarget(e.target)) return;
+            if (!(e.metaKey || e.ctrlKey) || e.altKey || blocksShortcuts(e.target)) return;
             const key = e.key.toLowerCase();
             if (key === "z") {
                 e.preventDefault();

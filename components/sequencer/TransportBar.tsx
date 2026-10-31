@@ -1,8 +1,7 @@
-import { isTypingTarget } from "@/lib/keyboard";
+import { blocksShortcuts } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import {
     AudioLines,
-    Download,
     FastForward,
     Pause,
     Play,
@@ -14,6 +13,7 @@ import {
 import { useEffect, useEffectEvent, useRef } from "react";
 import { useTrack } from "../hooks/useTrack";
 import { generateProgression, measureSegments, PROGRESSIONS } from "./generate";
+import { ExportMidiDialog } from "./ExportMidiDialog";
 import { buildMidi, downloadMidi } from "./midi";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
@@ -73,15 +73,15 @@ export const TransportBar = () => {
         }
     };
 
-    const handleExport = () =>
-        downloadMidi(buildMidi({ trackData, nbrSteps, totalSteps, tempo, octave }), "rollax.mid");
+    const handleExport = (filename: string) =>
+        downloadMidi(buildMidi({ trackData, nbrSteps, totalSteps, tempo, octave }), filename);
 
     const togglePlayback = useEffectEvent(() => (isPlaying ? handlePause() : handlePlay()));
 
     // Space toggles playback, except while typing in a field.
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
-            if (e.code !== "Space" || isTypingTarget(e.target)) return;
+            if (e.code !== "Space" || blocksShortcuts(e.target)) return;
             // Also stops a focused button from being clicked by the same key press.
             e.preventDefault();
             if (e.type === "keydown" && !e.repeat) togglePlayback();
@@ -165,16 +165,7 @@ export const TransportBar = () => {
                     <WandSparkles className="size-4" />
                     Generate
                 </button>
-                <button
-                    type="button"
-                    onClick={handleExport}
-                    disabled={trackData.length === 0}
-                    title={trackData.length === 0 ? "Add chords to export them" : "Download the track as a MIDI file"}
-                    className="flex h-8.5 items-center gap-2 rounded-[7px] border border-daw-line bg-daw-raised px-3.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    <Download className="size-4" />
-                    Export MIDI
-                </button>
+                <ExportMidiDialog disabled={trackData.length === 0} onExport={handleExport} />
             </div>
         </header>
     );

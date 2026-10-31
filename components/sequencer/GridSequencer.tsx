@@ -1,4 +1,4 @@
-import { isTypingTarget } from "@/lib/keyboard";
+import { blocksShortcuts } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import { noteIndex, notes } from "@/notes";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
@@ -117,11 +117,11 @@ export const GridSequencer = () => {
             const target = e.target;
             if (!(target instanceof Element) || target === scrollRef.current) return;
             if (laneRef.current?.contains(target) || rulerRef.current?.contains(target)) return;
-            if (target.closest("button, input, select, textarea, a, label, [draggable='true']")) return;
+            if (target.closest("button, input, select, textarea, a, label, [draggable='true'], [role='dialog']")) return;
             clearSelection();
         };
         const handleKey = (e: KeyboardEvent) => {
-            if (isTypingTarget(e.target)) return;
+            if (blocksShortcuts(e.target)) return;
             if (e.key === "Escape") clearSelection();
             if (e.key === "Delete" || e.key === "Backspace") {
                 e.preventDefault();
