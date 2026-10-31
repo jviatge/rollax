@@ -7,6 +7,8 @@ export type TTrackData = {
     len: number;
     chord: string[];
     name?: string;
+    /** Octaves above the track's octave (below when negative); unset is 0. */
+    octave?: number;
 };
 
 /** The grid's tracks: the chords, and the bass line, whose entries hold a single note. */

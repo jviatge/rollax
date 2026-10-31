@@ -17,7 +17,7 @@ const uint32 = (value: number) => [(value >>> 24) & 0xff, (value >>> 16) & 0xff,
 
 /**
  * Builds a single-track Standard MIDI File of the tracks as they play: each part's notes in its
- * octave (C4 is MIDI note 60), at `tempo`, in 4/4, and lasting the whole grid so a loop keeps its length.
+ * octave (Tone.js's C4, shown as C3, is MIDI note 60), at `tempo`, in 4/4, and lasting the whole grid so a loop keeps its length.
  */
 export const buildMidi = ({
     parts,
@@ -25,7 +25,7 @@ export const buildMidi = ({
     totalSteps,
     tempo,
 }: {
-    /** Each track with the octave its notes play in (the chords, and the bass lower). */
+    /** Each track with the octave its notes play in (the chords, and the bass lower), before each entry's shift. */
     parts: { data: TTrackData[]; octave: number }[];
     nbrSteps: number;
     totalSteps: number;
@@ -36,7 +36,7 @@ export const buildMidi = ({
         track.flatMap((data) =>
             data.chord
                 .filter((note) => noteIndex(note) >= 0)
-                .map((note) => (octave + 1) * 12 + noteIndex(note))
+                .map((note) => (octave + (data.octave ?? 0) + 1) * 12 + noteIndex(note))
                 .flatMap((pitch) => [
                     { tick: data.step * stepTicks, bytes: [0x90, pitch, VELOCITY] },
                     { tick: (data.step + data.len) * stepTicks, bytes: [0x80, pitch, 0] },

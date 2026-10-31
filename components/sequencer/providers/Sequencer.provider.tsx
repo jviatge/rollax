@@ -28,6 +28,16 @@ export type TSelectionLane = TLane | "all";
 /** The bass plays this many octaves below the chords. */
 export const BASS_OCTAVES_DOWN = 2;
 
+/**
+ * The piano roll's octaves, as Tone.js octaves: shown as C-2 to B7, with a top row for C8. Chords and
+ * bass notes can play in any of them.
+ */
+export const LOWEST_OCTAVE = -1;
+export const HIGHEST_OCTAVE = 8;
+
+/** The octave a track plays in, before each entry's own shift. */
+export const laneOctave = (lane: TLane, octave: number) => (lane === "bass" ? octave - BASS_OCTAVES_DOWN : octave);
+
 type TEffectsChain = { delay: Tone.FeedbackDelay; reverb: Tone.Reverb; meter: Tone.Meter };
 
 type TSequencerContext = {
@@ -141,7 +151,7 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     const [isPaused, setIsPaused] = useState(false);
     const [playStep, setPlayStep] = useState(0);
     const [cycle, setCycle] = useState(true);
-    const nbrNotes = 36;
+    const nbrNotes = (HIGHEST_OCTAVE - LOWEST_OCTAVE + 1) * 12 + 1;
     const octave = 4;
     const totalSteps = nbrSteps * nbrMeasures;
     const chainsRef = useRef<Record<TBus, TEffectsChain> | null>(null);
@@ -238,12 +248,12 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
             tracks[lane].map((data) => ({
                 time: `${data.step * stepTicks}i`,
                 lane,
-                notes: data.chord.map((note) => `${note}${noteOctave}`),
+                notes: data.chord.map((note) => `${note}${noteOctave + (data.octave ?? 0)}`),
                 duration: `${data.len * stepTicks}i`,
             }));
         const part = new Tone.Part<TPartEvent>(
             (time, event) => instrumentRefs[event.lane].current?.playChord(event.notes, event.duration, time),
-            [...events("chords", octave), ...events("bass", octave - BASS_OCTAVES_DOWN)],
+            [...events("chords", laneOctave("chords", octave)), ...events("bass", laneOctave("bass", octave))],
         );
         part.start(0);
         return () => {

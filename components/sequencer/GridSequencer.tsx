@@ -1,12 +1,12 @@
 import { blocksShortcuts } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
-import { noteIndex, notes } from "@/notes";
+import { noteIndex, notes, shownOctave } from "@/notes";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { TLane, TTrackData } from "../providers/Track.provider";
 import { useTrack, writeRange } from "../hooks/useTrack";
 import { getChordDrag, hasChordDrag, setChordDrag } from "./chordDrag";
 import { useSequencer } from "./hooks/useSequencer";
-import { BASS_OCTAVES_DOWN } from "./providers/Sequencer.provider";
+import { laneOctave, LOWEST_OCTAVE } from "./providers/Sequencer.provider";
 
 const KEY_W = 64;
 const ROW_H = 20;
@@ -109,7 +109,7 @@ export const GridSequencer = () => {
     const rulerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [viewW, setViewW] = useState(0);
-    const baseOctave = octave - 1;
+    const baseOctave = LOWEST_OCTAVE;
 
     // Fit the steps to the available width; scroll horizontally only below MIN_COL_W.
     useEffect(() => {
@@ -201,7 +201,11 @@ export const GridSequencer = () => {
     const highlight = highlightOn(selectedLane === "all" ? "chords" : selectedLane);
     const inRange = (step: number) => !!selectedRange && step >= selectedRange.start && step < selectedRange.end;
 
-    const selectedNotes = new Set(selectedChordOn("chords")?.chord.map(noteIndex) ?? []);
+    // The selected chord or bass note, whose notes are lit on the keyboard in its track's color.
+    const keyboardLane: TLane = selectedLane === "bass" ? "bass" : "chords";
+    const shownChord = selectedChordOn(keyboardLane);
+    const shownOctaveOf = (lane: TLane, data: { octave?: number }) => laneOctave(lane, octave) + (data.octave ?? 0);
+    const selectedNotes = new Set(shownChord?.chord.map(noteIndex) ?? []);
     // Top row is the highest note.
     const rows = [...Array(nbrNotes).keys()].map((row) => {
         const index = nbrNotes - 1 - row;
@@ -211,10 +215,10 @@ export const GridSequencer = () => {
             name,
             octave: rowOctave,
             black: name.includes("#"),
-            inSelectedChord: rowOctave === octave && selectedNotes.has(index % 12),
+            inSelectedChord: !!shownChord && rowOctave === shownOctaveOf(keyboardLane, shownChord) && selectedNotes.has(index % 12),
         };
     });
-    const rowOf = (note: string) => nbrNotes - 1 - ((octave - baseOctave) * 12 + noteIndex(note));
+    const rowOf = (note: string, noteOctave: number) => nbrNotes - 1 - ((noteOctave - baseOctave) * 12 + noteIndex(note));
 
     // The ruler, the tracks and the piano roll all start at the grid origin, so the step under the
     // pointer comes from its x offset.
@@ -398,7 +402,7 @@ export const GridSequencer = () => {
                                         data.len * colW > 48 && (
                                             <span className="font-mono text-[10px] leading-none whitespace-nowrap">
                                                 {data.chord[0]}
-                                                {octave - BASS_OCTAVES_DOWN}
+                                                {shownOctave(laneOctave("bass", octave) + (data.octave ?? 0))}
                                             </span>
                                         )
                                     )}
@@ -505,16 +509,19 @@ export const GridSequencer = () => {
                                     ? "border-black bg-daw-well text-[#8e8e93]"
                                     : "border-[#c7c7cc] bg-[#e9e9ec] text-[#3a3a3d]",
                                 row.name === "C" && "border-[#8e8e93]",
-                                row.inSelectedChord && "bg-daw-accent text-daw-accent-ink",
+                                row.inSelectedChord &&
+                                    (keyboardLane === "bass"
+                                        ? "bg-daw-bass text-daw-bass-ink"
+                                        : "bg-daw-accent text-daw-accent-ink"),
                             )}
                             style={{ height: ROW_H }}
                         >
-                            {row.name === "C" && `C${row.octave}`}
+                            {row.name === "C" && `C${shownOctave(row.octave)}`}
                         </div>
                     ))}
                 </div>
 
-                {/* Piano roll: the chords; drops here go to the chord track. */}
+                {/* Piano roll: the chords and the bass notes; drops here go to the chord track. */}
                 <div className="relative" {...dropHandlers("chords")}>
                     {rows.map((row, i) => (
                         <div
@@ -539,20 +546,27 @@ export const GridSequencer = () => {
                             style={{ left: highlight.x, width: highlight.w }}
                         />
                     )}
-                    {shown.chords.flatMap((data) =>
-                        data.chord.map((note) => (
-                            <div
-                                key={`${data.id}-${note}`}
-                                className="absolute flex h-4 items-center overflow-hidden rounded bg-daw-accent pl-1.5 text-[10px] font-bold text-daw-accent-ink shadow-[inset_0_-2px_0_rgba(0,0,0,0.25)]"
-                                style={{
-                                    top: rowOf(note) * ROW_H + 2,
-                                    left: data.step * colW + 2,
-                                    width: data.len * colW - 4,
-                                }}
-                            >
-                                {data.len * colW > 36 && `${note}${octave}`}
-                            </div>
-                        )),
+                    {(["bass", "chords"] as const).flatMap((lane) =>
+                        shown[lane].flatMap((data) =>
+                            data.chord.map((note) => (
+                                <div
+                                    key={`${lane}-${data.id}-${note}`}
+                                    className={cn(
+                                        "absolute flex h-4 items-center overflow-hidden rounded pl-1.5 text-[10px] font-bold shadow-[inset_0_-2px_0_rgba(0,0,0,0.25)]",
+                                        lane === "bass"
+                                            ? "bg-daw-bass text-daw-bass-ink"
+                                            : "bg-daw-accent text-daw-accent-ink",
+                                    )}
+                                    style={{
+                                        top: rowOf(note, shownOctaveOf(lane, data)) * ROW_H + 2,
+                                        left: data.step * colW + 2,
+                                        width: data.len * colW - 4,
+                                    }}
+                                >
+                                    {data.len * colW > 36 && `${note}${shownOctave(shownOctaveOf(lane, data))}`}
+                                </div>
+                            )),
+                        ),
                     )}
                     {dropPreview("chords")}
                     <Playhead colW={colW} />

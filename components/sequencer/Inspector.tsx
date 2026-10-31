@@ -8,14 +8,15 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { ChevronsLeft, ChevronsRight, Eraser, Power, Trash2, WandSparkles, X } from "lucide-react";
+import { shownOctave } from "@/notes";
+import { ChevronsLeft, ChevronsRight, Eraser, Minus, Plus, Power, Trash2, WandSparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTrack } from "../hooks/useTrack";
-import { TLane } from "../providers/Track.provider";
+import { TLane, TTrackData } from "../providers/Track.provider";
 import { dialogButton } from "./ExportMidiDialog";
 import { useGenerate } from "./hooks/useGenerate";
 import { useSequencer } from "./hooks/useSequencer";
-import { TBus, TEffectId, TEffects } from "./providers/Sequencer.provider";
+import { HIGHEST_OCTAVE, laneOctave, LOWEST_OCTAVE, TBus, TEffectId, TEffects } from "./providers/Sequencer.provider";
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
     <h2 className="text-[11px] font-semibold tracking-widest text-daw-muted uppercase">
@@ -342,8 +343,122 @@ const OutputSection = ({ bus }: { bus: TBus }) => (
     </div>
 );
 
+const IconAction = ({
+    label,
+    onClick,
+    disabled,
+    className,
+    children,
+}: {
+    label: string;
+    onClick: () => void;
+    disabled: boolean;
+    className: string;
+    children: React.ReactNode;
+}) => (
+    <button
+        type="button"
+        aria-label={label}
+        title={label}
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+            "flex h-8 items-center justify-center rounded-[7px] border disabled:cursor-not-allowed disabled:opacity-40",
+            className,
+        )}
+    >
+        {children}
+    </button>
+);
+
+const stepperButton =
+    "flex size-6 items-center justify-center rounded-[5px] text-daw-sub hover:bg-daw-raised disabled:opacity-40";
+
+/** A value with − and + buttons. */
+const Stepper = ({
+    label,
+    value,
+    decrease,
+    increase,
+}: {
+    label: string;
+    value: string;
+    decrease: { title: string; disabled: boolean; onClick: () => void };
+    increase: { title: string; disabled: boolean; onClick: () => void };
+}) => (
+    <div className="flex flex-col gap-1.5">
+        <SectionTitle>{label}</SectionTitle>
+        <div className="flex items-center justify-between rounded-[7px] bg-daw-well p-0.5">
+            <button
+                type="button"
+                aria-label={decrease.title}
+                title={decrease.title}
+                disabled={decrease.disabled}
+                onClick={decrease.onClick}
+                className={stepperButton}
+            >
+                <Minus className="size-3.5" />
+            </button>
+            <span className="font-mono text-xs text-daw-text">{value}</span>
+            <button
+                type="button"
+                aria-label={increase.title}
+                title={increase.title}
+                disabled={increase.disabled}
+                onClick={increase.onClick}
+                className={stepperButton}
+            >
+                <Plus className="size-3.5" />
+            </button>
+        </div>
+    </div>
+);
+
+/** Edits the chord or bass note the selection starts on: its octave and length. */
+const EntryEditor = ({ lane, entry }: { lane: TLane; entry: TTrackData }) => {
+    const { totalSteps, octave } = useSequencer();
+    const { handleReplaceRange, handleResizeChord } = useTrack(lane);
+    const shift = entry.octave ?? 0;
+    const playedOctave = laneOctave(lane, octave) + shift;
+    const setShift = (value: number) =>
+        handleReplaceRange(entry.step, entry.step + entry.len, [{ ...entry, octave: value || undefined }]);
+
+    return (
+        <>
+            <Stepper
+                label="Octave"
+                value={String(shownOctave(playedOctave))}
+                decrease={{
+                    title: "One octave down",
+                    disabled: playedOctave <= LOWEST_OCTAVE,
+                    onClick: () => setShift(shift - 1),
+                }}
+                increase={{
+                    title: "One octave up",
+                    disabled: playedOctave >= HIGHEST_OCTAVE,
+                    onClick: () => setShift(shift + 1),
+                }}
+            />
+            <Stepper
+                label="Length"
+                value={String(entry.len)}
+                decrease={{
+                    title: "Shorten by one step",
+                    disabled: entry.len <= 1,
+                    onClick: () => handleResizeChord(entry.step, entry.step, entry.len - 1, totalSteps),
+                }}
+                increase={{
+                    title: "Lengthen by one step, over the next steps",
+                    disabled: entry.step + entry.len >= totalSteps,
+                    onClick: () => handleResizeChord(entry.step, entry.step, entry.len + 1, totalSteps),
+                }}
+            />
+        </>
+    );
+};
+
 const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
-    const { nbrSteps, selectedStep, selectedLane, selectedRange, selectedArea, setSelectedStep } =
+    const { nbrSteps, octave, selectedStep, selectedLane, selectedRange, selectedArea } =
         useSequencer();
     const { tracks, handleClearRange } = useTrack();
     // The tracks the selection acts on: its own, or both for a selection made in the ruler.
@@ -354,8 +469,8 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
         : laneTrack.find((data) => data.step === selectedStep);
     const chordAt = (step: number) =>
         laneTrack.find((data) => step >= data.step && step < data.step + data.len);
-    const stepLabel = (step: number) =>
-        `Bar ${Math.floor(step / nbrSteps) + 1} · Step ${(step % nbrSteps) + 1}`;
+    // Bar.step, both counted from 1.
+    const position = (step: number) => `${Math.floor(step / nbrSteps) + 1}.${(step % nbrSteps) + 1}`;
     const hasChords =
         !!selectedArea &&
         lanes.some((lane) =>
@@ -363,105 +478,88 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                 (data) => data.step < selectedArea.end && data.step + data.len > selectedArea.start,
             ),
         );
-    const laneLabel = { chords: "Chords", bass: "Bass", all: "Chords + bass" }[selectedLane];
+    const laneLabel = { chords: "Chords", bass: "Bass", all: "All" }[selectedLane];
+    const deleteLabel = selectedChord
+        ? `${selectedLane === "bass" ? "Delete note" : "Delete chord"} (Delete)`
+        : "Clear steps (Delete)";
+
+    if (selectedStep === null) {
+        return (
+            <p className="p-4 text-xs leading-normal text-daw-muted">
+                Click or drag across steps to select them. Click a track name to manage the track.
+            </p>
+        );
+    }
 
     return (
         <div className="flex flex-col gap-3 p-4">
-            <div className="font-mono text-xs text-daw-sub">
-                {selectedStep !== null && (
-                    <span className={selectedLane === "bass" ? "text-daw-bass" : "text-daw-accent"}>
-                        {laneLabel} ·{" "}
-                    </span>
-                )}
-                {selectedRange
-                    ? `${stepLabel(selectedRange.start)} – ${stepLabel(selectedRange.end - 1)}`
-                    : selectedStep === null
-                      ? "No step selected"
-                      : stepLabel(selectedStep)}
+            <div className="flex items-baseline justify-between gap-1 font-mono text-[11px]">
+                <span className={selectedLane === "bass" ? "text-daw-bass" : "text-daw-accent"}>{laneLabel}</span>
+                <span className="text-daw-sub">
+                    {selectedRange
+                        ? `${position(selectedRange.start)}–${position(selectedRange.end - 1)}`
+                        : position(selectedStep)}
+                </span>
             </div>
             {selectedChord ? (
-                <div className="flex flex-col gap-3 rounded-[10px] border border-daw-raised bg-[#1a1a1c] p-3.5">
+                <div className="flex flex-col gap-1 rounded-[10px] border border-daw-raised bg-[#1a1a1c] p-2.5">
                     <div
+                        title={selectedChord.name}
                         className={cn(
-                            "text-3xl font-bold",
+                            "truncate leading-tight font-bold",
+                            // Smaller for long names, so a suffix like maj7 isn't cut off.
+                            (selectedChord.name ?? "Custom").length <= 4
+                                ? "text-2xl"
+                                : (selectedChord.name ?? "Custom").length <= 6
+                                  ? "text-lg"
+                                  : "text-base",
                             selectedLane === "bass" ? "text-daw-bass" : "text-daw-accent",
                         )}
                     >
-                        {selectedChord.name}
+                        {selectedChord.name ?? "Custom"}
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                        {selectedChord.chord.map((note) => (
-                            <span
-                                key={note}
-                                className="rounded-full bg-[#2e2e32] px-2.5 py-0.5 font-mono text-xs"
-                            >
-                                {note}
-                            </span>
-                        ))}
+                    <div className="truncate font-mono text-[11px] text-daw-muted">
+                        {selectedLane === "all"
+                            ? ""
+                            : selectedChord.chord
+                                  .map((note) => `${note}${shownOctave(laneOctave(selectedLane, octave) + (selectedChord.octave ?? 0))}`)
+                                  .join(" ")}
                     </div>
                 </div>
             ) : (
-                <p className="rounded-[10px] border border-dashed border-daw-line p-3.5 leading-normal text-daw-muted">
+                <p className="rounded-[10px] border border-dashed border-daw-line p-2.5 text-xs leading-normal text-daw-muted">
                     {selectedRange
                         ? `${selectedRange.end - selectedRange.start} steps selected.`
-                        : selectedStep === null
-                          ? "Click or drag across steps to select them. Click a track name to manage the track."
-                          : chordAt(selectedStep)
-                            ? `Inside ${chordAt(selectedStep)?.name}. Drop a chord here to split it.`
-                            : "Empty step. Drag a chord from the library onto it."}
+                        : chordAt(selectedStep)
+                          ? `Inside ${chordAt(selectedStep)?.name ?? "a chord"}. Drop a chord here to split it.`
+                          : "Empty step. Drag a chord from the library onto it."}
                 </p>
             )}
-            <div className="flex flex-col gap-2">
-                <button
-                    type="button"
+            <div className="grid grid-cols-2 gap-1">
+                <IconAction
+                    label={
+                        selectedLane === "bass"
+                            ? "Generate a bass on the roots of the chords in the selection"
+                            : selectedLane === "all"
+                              ? "Generate chords, then a bass on their roots, in the selection"
+                              : "Generate chords in the selection"
+                    }
                     onClick={onGenerate}
                     disabled={!selectedArea}
-                    title={
-                        selectedLane === "bass"
-                            ? "Bass on the roots of the chords in the selection"
-                            : selectedLane === "all"
-                              ? "Chords, then a bass on their roots, in the selection"
-                              : "Chords in the selection"
-                    }
-                    className={cn(
-                        actionButton,
-                        "border border-daw-accent text-daw-accent hover:bg-daw-accent/10",
-                    )}
+                    className="border-daw-accent text-daw-accent hover:bg-daw-accent/10"
                 >
                     <WandSparkles className="size-4" />
-                    Generate selection
-                </button>
-                <button
-                    type="button"
-                    onClick={() =>
-                        selectedArea &&
-                        handleClearRange(selectedArea.start, selectedArea.end, lanes)
-                    }
+                </IconAction>
+                <IconAction
+                    label={deleteLabel}
+                    onClick={() => selectedArea && handleClearRange(selectedArea.start, selectedArea.end, lanes)}
                     disabled={!hasChords}
-                    title="Delete or Backspace"
-                    className={cn(
-                        actionButton,
-                        "border border-[#5a2a2a] bg-[#3a1f1f] text-[#ffb4ab]",
-                    )}
+                    className="border-[#5a2a2a] bg-[#3a1f1f] text-[#ffb4ab]"
                 >
                     {selectedChord ? <Trash2 className="size-4" /> : <Eraser className="size-4" />}
-                    {selectedChord
-                        ? selectedLane === "bass"
-                            ? "Delete note"
-                            : "Delete chord"
-                        : "Clear steps"}
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setSelectedStep(null)}
-                    disabled={selectedStep === null}
-                    title="Escape"
-                    className={cn(actionButton, "border border-daw-line bg-daw-raised")}
-                >
-                    <X className="size-4" />
-                    Deselect
-                </button>
+                </IconAction>
             </div>
+            {selectedChord && selectedLane !== "all" && <EntryEditor lane={selectedLane} entry={selectedChord} />}
         </div>
     );
 };

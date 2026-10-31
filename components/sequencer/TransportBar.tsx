@@ -15,7 +15,7 @@ import { notes } from "@/notes";
 import { ExportMidiDialog } from "./ExportMidiDialog";
 import { ImportMidiDialog } from "./ImportMidiDialog";
 import { buildMidi, downloadMidi, midiToTrack, parseMidi } from "./midi";
-import { BASS_OCTAVES_DOWN } from "./providers/Sequencer.provider";
+import { laneOctave } from "./providers/Sequencer.provider";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
 
@@ -160,8 +160,8 @@ export const TransportBar = () => {
         downloadMidi(
             buildMidi({
                 parts: [
-                    { data: tracks.chords, octave },
-                    { data: tracks.bass, octave: octave - BASS_OCTAVES_DOWN },
+                    { data: tracks.chords, octave: laneOctave("chords", octave) },
+                    { data: tracks.bass, octave: laneOctave("bass", octave) },
                 ],
                 nbrSteps,
                 totalSteps,
