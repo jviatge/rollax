@@ -105,17 +105,19 @@ export const TransportBar = () => {
     const { ListChordsByNotes } = useChord();
     const { trackData, handleReplaceTrack, handleReplaceRange } = useTrack();
     const lastProgressionRef = useRef<number | null>(null);
-    const [tempoDraft, setTempoDraft] = useState(String(tempo));
+    // The typed tempo while the field is being edited; otherwise the field shows the current tempo.
+    const [tempoDraft, setTempoDraft] = useState<string | null>(null);
+    const tempoText = tempoDraft ?? String(tempo);
     const cancelTempoRef = useRef(false);
 
     const clampTempo = (value: number) => Math.min(240, Math.max(40, value));
 
     // The typed tempo applies on blur or Enter, kept within 40–240 BPM; Escape restores the current one.
     const commitTempo = () => {
-        const value = cancelTempoRef.current ? tempo : clampTempo(Number(tempoDraft) || tempo);
+        const value = cancelTempoRef.current ? tempo : clampTempo(Number(tempoText) || tempo);
         cancelTempoRef.current = false;
         handleTempoChange(value);
-        setTempoDraft(String(value));
+        setTempoDraft(null);
     };
 
     const handleTempoKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -123,7 +125,7 @@ export const TransportBar = () => {
             // Arrows step the tempo by 1 (10 with Shift) and apply it right away.
             e.preventDefault();
             const step = (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1);
-            const value = clampTempo((Number(tempoDraft) || tempo) + step);
+            const value = clampTempo((Number(tempoText) || tempo) + step);
             handleTempoChange(value);
             setTempoDraft(String(value));
         }
@@ -239,14 +241,17 @@ export const TransportBar = () => {
                                 autoComplete="off"
                                 spellCheck={false}
                                 aria-label="Tempo (BPM)"
-                                value={tempoDraft}
+                                value={tempoText}
                                 // Digits only, at most three: the tempo is 40–240 BPM.
                                 onChange={(e) => setTempoDraft(e.target.value.replace(/\D/g, "").slice(0, 3))}
-                                onFocus={(e) => e.target.select()}
+                                onFocus={(e) => {
+                                    setTempoDraft(String(tempo));
+                                    e.target.select();
+                                }}
                                 onBlur={commitTempo}
                                 onKeyDown={handleTempoKey}
                                 // Sized to the digits plus the 0.025em letter spacing of tracking-wide, so none is clipped.
-                                style={{ width: `calc(${Math.max(1, tempoDraft.length)} * (1ch + 0.025em))` }}
+                                style={{ width: `calc(${Math.max(1, tempoText.length)} * (1ch + 0.025em))` }}
                                 className="cursor-pointer bg-transparent p-0 font-mono text-lg leading-tight font-bold tracking-wide text-daw-lcd-text outline-none focus:cursor-text"
                             />
                         }
