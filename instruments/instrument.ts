@@ -5,7 +5,8 @@ export type TInstrumentType = "piano" | "synth";
 export abstract class Instrument {
     protected abstract instrument: Tone.Sampler | Tone.PolySynth | null;
 
-    abstract init(): void;
+    /** Creates the sound source, connected to `output` (the effects chain). */
+    abstract init(output: Tone.InputNode): void;
 
     playChord = (notes: string[], duration: Tone.Unit.Time, time: number) => {
         this.instrument?.triggerAttackRelease(notes, duration, time);

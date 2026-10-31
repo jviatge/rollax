@@ -4,7 +4,7 @@ import { Instrument } from "../instrument";
 export class InstruPiano extends Instrument {
     protected instrument: Tone.Sampler | null = null;
 
-    init() {
+    init(output: Tone.InputNode) {
         this.instrument = new Tone.Sampler({
             urls: {
                 C4: "C4.mp3",
@@ -14,6 +14,6 @@ export class InstruPiano extends Instrument {
             },
             release: 1,
             baseUrl: "https://tonejs.github.io/audio/salamander/",
-        }).toDestination();
+        }).connect(output);
     }
 }

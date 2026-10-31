@@ -8,9 +8,23 @@ import * as Tone from "tone";
 
 type TPartEvent = { time: Tone.Unit.Time; notes: string[]; duration: Tone.Unit.Time };
 
+/** Mixes are 0–1; the reverb size is its decay in seconds and the delay feedback 0–0.9. */
+export type TEffects = { reverbMix: number; reverbSize: number; delayMix: number; delayFeedback: number };
+
+export type TEffectId = "reverb" | "delay";
+
+type TEffectsChain = { delay: Tone.FeedbackDelay; reverb: Tone.Reverb; meter: Tone.Meter };
+
 type TSequencerContext = {
     selectedInstrument: TInstrumentType;
     handleSelectInstrument: (instrument: TInstrumentType) => void;
+    effects: TEffects;
+    handleEffectChange: (effect: keyof TEffects, value: number) => void;
+    /** Whether each effect is on; an effect that is off keeps its settings but is silent. */
+    effectsOn: Record<TEffectId, boolean>;
+    toggleEffect: (effect: TEffectId) => void;
+    /** The output level of each stereo channel in dB (-Infinity when silent). */
+    getLevels: () => number[];
     tempo: number;
     handleTempoChange: (tempo: number) => void;
     nbrMeasures: number;
@@ -49,6 +63,13 @@ export const SequencerContext = createContext<TSequencerContext | null>(null);
 export const SequencerProvider = ({ children }: { children: React.ReactNode }) => {
     const { trackData, handleRescale } = useTrack();
     const [selectedInstrument, setSelectedInstrument] = useState<TInstrumentType>("synth");
+    const [effects, setEffects] = useState<TEffects>({
+        reverbMix: 0.2,
+        reverbSize: 2.5,
+        delayMix: 0,
+        delayFeedback: 0.35,
+    });
+    const [effectsOn, setEffectsOn] = useState<Record<TEffectId, boolean>>({ reverb: true, delay: true });
     const [tempo, setTempo] = useState(120);
     const [nbrMeasures, setNbrMeasures] = useState(4);
     const [nbrSteps, setNbrSteps] = useState(4);
@@ -63,6 +84,7 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     const octave = 4;
     const totalSteps = nbrSteps * nbrMeasures;
     const instrumentRef = useRef<Instrument | null>(null);
+    const chainRef = useRef<TEffectsChain | null>(null);
     const selectedRange =
         selectedStep !== null && selectionEnd !== null && selectionEnd !== selectedStep
             ? { start: Math.min(selectedStep, selectionEnd), end: Math.max(selectedStep, selectionEnd) + 1 }
@@ -98,8 +120,39 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
         setPlayStep(0);
     }, []);
 
+    // The instrument plays through delay → reverb → speakers; the meter listens after the reverb.
+    // Declared before the instrument effect so the chain exists when the instrument connects to it.
     useEffect(() => {
-        const instrument = instruments(selectedInstrument);
+        const meter = new Tone.Meter({ channelCount: 2, smoothing: 0.8 });
+        const reverb = new Tone.Reverb().toDestination();
+        reverb.connect(meter);
+        const delay = new Tone.FeedbackDelay().connect(reverb);
+        chainRef.current = { delay, reverb, meter };
+        return () => {
+            [delay, reverb, meter].forEach((node) => node.dispose());
+            chainRef.current = null;
+        };
+    }, []);
+
+    // The delay repeats on eighth notes, so it follows the tempo.
+    useEffect(() => {
+        const chain = chainRef.current;
+        if (!chain) return;
+        chain.reverb.wet.value = effectsOn.reverb ? effects.reverbMix : 0;
+        // Setting the decay regenerates the reverb's impulse response, so only do it when it changes.
+        if (chain.reverb.decay !== effects.reverbSize) chain.reverb.decay = effects.reverbSize;
+        chain.delay.wet.value = effectsOn.delay ? effects.delayMix : 0;
+        chain.delay.feedback.value = effects.delayFeedback;
+        chain.delay.delayTime.value = 60 / tempo / 2;
+    }, [effects, effectsOn, tempo]);
+
+    const getLevels = useCallback(() => {
+        const value = chainRef.current?.meter.getValue() ?? -Infinity;
+        return Array.isArray(value) ? value : [value, value];
+    }, []);
+
+    useEffect(() => {
+        const instrument = instruments(selectedInstrument, chainRef.current?.delay ?? Tone.getDestination());
         instrumentRef.current = instrument;
         return () => {
             instrument.dispose();
@@ -224,6 +277,11 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
             value={{
                 selectedInstrument,
                 handleSelectInstrument: setSelectedInstrument,
+                effects,
+                handleEffectChange: (effect, value) => setEffects((current) => ({ ...current, [effect]: value })),
+                effectsOn,
+                toggleEffect: (effect) => setEffectsOn((current) => ({ ...current, [effect]: !current[effect] })),
+                getLevels,
                 tempo,
                 handleTempoChange: setTempo,
                 nbrMeasures,
