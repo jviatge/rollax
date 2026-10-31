@@ -4,15 +4,23 @@ import { useTrack } from "@/components/hooks/useTrack";
 import { TLane } from "@/components/providers/Track.provider";
 import { instruments, TInstrumentType } from "@/instruments";
 import { Instrument } from "@/instruments/instrument";
-import { createContext, useCallback, useEffect, useRef, useState } from "react";
+import { createContext, RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Tone from "tone";
 
-type TPartEvent = { time: Tone.Unit.Time; notes: string[]; duration: Tone.Unit.Time };
+type TPartEvent = { time: Tone.Unit.Time; lane: TLane; notes: string[]; duration: Tone.Unit.Time };
 
 /** Mixes are 0–1; the reverb size is its decay in seconds and the delay feedback 0–0.9. */
 export type TEffects = { reverbMix: number; reverbSize: number; delayMix: number; delayFeedback: number };
 
 export type TEffectId = "reverb" | "delay";
+
+/** Where effects apply: each track, then the master bus that mixes them to the speakers. */
+export type TBus = TLane | "master";
+
+const BUSES: TBus[] = ["chords", "bass", "master"];
+
+const TRACK_EFFECTS: TEffects = { reverbMix: 0, reverbSize: 2.5, delayMix: 0, delayFeedback: 0.35 };
+const ALL_ON: Record<TEffectId, boolean> = { reverb: true, delay: true };
 
 /** The track a selection is on; a selection made in the ruler covers every track. */
 export type TSelectionLane = TLane | "all";
@@ -23,15 +31,20 @@ export const BASS_OCTAVES_DOWN = 2;
 type TEffectsChain = { delay: Tone.FeedbackDelay; reverb: Tone.Reverb; meter: Tone.Meter };
 
 type TSequencerContext = {
-    selectedInstrument: TInstrumentType;
-    handleSelectInstrument: (instrument: TInstrumentType) => void;
-    effects: TEffects;
-    handleEffectChange: (effect: keyof TEffects, value: number) => void;
+    /** The instrument each track plays. */
+    instrumentsByLane: Record<TLane, TInstrumentType>;
+    handleSelectInstrument: (lane: TLane, instrument: TInstrumentType) => void;
+    effects: Record<TBus, TEffects>;
+    handleEffectChange: (bus: TBus, effect: keyof TEffects, value: number) => void;
     /** Whether each effect is on; an effect that is off keeps its settings but is silent. */
-    effectsOn: Record<TEffectId, boolean>;
-    toggleEffect: (effect: TEffectId) => void;
-    /** The output level of each stereo channel in dB (-Infinity when silent). */
-    getLevels: () => number[];
+    effectsOn: Record<TBus, Record<TEffectId, boolean>>;
+    toggleEffect: (bus: TBus, effect: TEffectId) => void;
+    /** A bus's output level for each stereo channel in dB (-Infinity when silent). */
+    getLevels: (bus: TBus) => number[];
+    /** The track selected as a whole (from its header), shown in the Selection column. */
+    selectedTrack: TLane | null;
+    /** Selects a whole track; this clears the step selection. */
+    setSelectedTrack: (lane: TLane | null) => void;
     tempo: number;
     handleTempoChange: (tempo: number) => void;
     nbrMeasures: number;
@@ -69,16 +82,54 @@ type TSequencerContext = {
 
 export const SequencerContext = createContext<TSequencerContext | null>(null);
 
+/**
+ * Each bus is delay → reverb, with a meter after the reverb. The tracks feed the master bus, which
+ * plays to the speakers.
+ */
+const createChains = (): Record<TBus, TEffectsChain> => {
+    const createChain = (output: Tone.InputNode): TEffectsChain => {
+        const meter = new Tone.Meter({ channelCount: 2, smoothing: 0.8 });
+        const reverb = new Tone.Reverb().connect(output);
+        reverb.connect(meter);
+        const delay = new Tone.FeedbackDelay().connect(reverb);
+        return { delay, reverb, meter };
+    };
+    const master = createChain(Tone.getDestination());
+    return { master, chords: createChain(master.delay), bass: createChain(master.delay) };
+};
+
+/** Creates a track's instrument, connected to the start of its effects chain, and swaps it on change. */
+const useLaneInstrument = (type: TInstrumentType, getChains: () => Record<TBus, TEffectsChain>, lane: TLane) => {
+    const ref = useRef<Instrument | null>(null);
+    useEffect(() => {
+        const instrument = instruments(type, getChains()[lane].delay);
+        ref.current = instrument;
+        return () => {
+            instrument.dispose();
+            if (ref.current === instrument) ref.current = null;
+        };
+    }, [type, getChains, lane]);
+    return ref;
+};
+
 export const SequencerProvider = ({ children }: { children: React.ReactNode }) => {
     const { tracks, handleRescale } = useTrack();
-    const [selectedInstrument, setSelectedInstrument] = useState<TInstrumentType>("synth");
-    const [effects, setEffects] = useState<TEffects>({
-        reverbMix: 0.2,
-        reverbSize: 2.5,
-        delayMix: 0,
-        delayFeedback: 0.35,
+    const [instrumentsByLane, setInstrumentsByLane] = useState<Record<TLane, TInstrumentType>>({
+        chords: "synth",
+        bass: "synth",
     });
-    const [effectsOn, setEffectsOn] = useState<Record<TEffectId, boolean>>({ reverb: true, delay: true });
+    // Only the master reverb starts on, so the tracks don't stack reverbs by default.
+    const [effects, setEffects] = useState<Record<TBus, TEffects>>({
+        chords: TRACK_EFFECTS,
+        bass: TRACK_EFFECTS,
+        master: { ...TRACK_EFFECTS, reverbMix: 0.2 },
+    });
+    const [effectsOn, setEffectsOn] = useState<Record<TBus, Record<TEffectId, boolean>>>({
+        chords: ALL_ON,
+        bass: ALL_ON,
+        master: ALL_ON,
+    });
+    const [selectedTrack, setSelectedTrackState] = useState<TLane | null>(null);
     const [tempo, setTempo] = useState(120);
     const [nbrMeasures, setNbrMeasures] = useState(4);
     const [nbrSteps, setNbrSteps] = useState(4);
@@ -93,8 +144,28 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     const nbrNotes = 36;
     const octave = 4;
     const totalSteps = nbrSteps * nbrMeasures;
-    const instrumentRef = useRef<Instrument | null>(null);
-    const chainRef = useRef<TEffectsChain | null>(null);
+    const chainsRef = useRef<Record<TBus, TEffectsChain> | null>(null);
+    // Created on first use, so the instruments can connect to it whatever order the effects run in.
+    const getChains = useCallback(() => (chainsRef.current ??= createChains()), []);
+    useEffect(
+        () => () => {
+            Object.values(chainsRef.current ?? {}).forEach(({ delay, reverb, meter }) =>
+                [delay, reverb, meter].forEach((node) => node.dispose()),
+            );
+            chainsRef.current = null;
+        },
+        [],
+    );
+    const chordsInstrument = useLaneInstrument(instrumentsByLane.chords, getChains, "chords");
+    const bassInstrument = useLaneInstrument(instrumentsByLane.bass, getChains, "bass");
+    const instrumentRefs: Record<TLane, RefObject<Instrument | null>> = useMemo(
+        () => ({ chords: chordsInstrument, bass: bassInstrument }),
+        [chordsInstrument, bassInstrument],
+    );
+    const releaseAll = useCallback(
+        () => Object.values(instrumentRefs).forEach((ref) => ref.current?.releaseAll()),
+        [instrumentRefs],
+    );
     const selectedRange =
         selectedStep !== null && selectionEnd !== null && selectionEnd !== selectedStep
             ? { start: Math.min(selectedStep, selectionEnd), end: Math.max(selectedStep, selectionEnd) + 1 }
@@ -113,7 +184,14 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
 
     const setSelectedStep = (step: number | null, lane?: TSelectionLane) => {
         if (lane) setSelectedLane(lane);
+        setSelectedTrackState(null);
         setSelectedAnchor(step);
+        setSelectionEnd(null);
+    };
+
+    const setSelectedTrack = (lane: TLane | null) => {
+        setSelectedTrackState(lane);
+        setSelectedAnchor(null);
         setSelectionEnd(null);
     };
 
@@ -127,51 +205,31 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
 
     const handleStop = useCallback(() => {
         Tone.getTransport().stop();
-        instrumentRef.current?.releaseAll();
+        releaseAll();
         setIsPlaying(false);
         setIsPaused(false);
         setPlayStep(0);
-    }, []);
+    }, [releaseAll]);
 
-    // The instrument plays through delay → reverb → speakers; the meter listens after the reverb.
-    // Declared before the instrument effect so the chain exists when the instrument connects to it.
+    // The delays repeat on eighth notes, so they follow the tempo.
     useEffect(() => {
-        const meter = new Tone.Meter({ channelCount: 2, smoothing: 0.8 });
-        const reverb = new Tone.Reverb().toDestination();
-        reverb.connect(meter);
-        const delay = new Tone.FeedbackDelay().connect(reverb);
-        chainRef.current = { delay, reverb, meter };
-        return () => {
-            [delay, reverb, meter].forEach((node) => node.dispose());
-            chainRef.current = null;
-        };
-    }, []);
+        const chains = getChains();
+        for (const bus of BUSES) {
+            const { delay, reverb } = chains[bus];
+            const settings = effects[bus];
+            reverb.wet.value = effectsOn[bus].reverb ? settings.reverbMix : 0;
+            // Setting the decay regenerates the reverb's impulse response, so only do it when it changes.
+            if (reverb.decay !== settings.reverbSize) reverb.decay = settings.reverbSize;
+            delay.wet.value = effectsOn[bus].delay ? settings.delayMix : 0;
+            delay.feedback.value = settings.delayFeedback;
+            delay.delayTime.value = 60 / tempo / 2;
+        }
+    }, [effects, effectsOn, tempo, getChains]);
 
-    // The delay repeats on eighth notes, so it follows the tempo.
-    useEffect(() => {
-        const chain = chainRef.current;
-        if (!chain) return;
-        chain.reverb.wet.value = effectsOn.reverb ? effects.reverbMix : 0;
-        // Setting the decay regenerates the reverb's impulse response, so only do it when it changes.
-        if (chain.reverb.decay !== effects.reverbSize) chain.reverb.decay = effects.reverbSize;
-        chain.delay.wet.value = effectsOn.delay ? effects.delayMix : 0;
-        chain.delay.feedback.value = effects.delayFeedback;
-        chain.delay.delayTime.value = 60 / tempo / 2;
-    }, [effects, effectsOn, tempo]);
-
-    const getLevels = useCallback(() => {
-        const value = chainRef.current?.meter.getValue() ?? -Infinity;
+    const getLevels = useCallback((bus: TBus) => {
+        const value = chainsRef.current?.[bus].meter.getValue() ?? -Infinity;
         return Array.isArray(value) ? value : [value, value];
     }, []);
-
-    useEffect(() => {
-        const instrument = instruments(selectedInstrument, chainRef.current?.delay ?? Tone.getDestination());
-        instrumentRef.current = instrument;
-        return () => {
-            instrument.dispose();
-            if (instrumentRef.current === instrument) instrumentRef.current = null;
-        };
-    }, [selectedInstrument]);
 
     // Rebuild the scheduled chords and bass notes whenever the tracks or the grid change.
     useEffect(() => {
@@ -179,18 +237,19 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
         const events = (lane: TLane, noteOctave: number) =>
             tracks[lane].map((data) => ({
                 time: `${data.step * stepTicks}i`,
+                lane,
                 notes: data.chord.map((note) => `${note}${noteOctave}`),
                 duration: `${data.len * stepTicks}i`,
             }));
         const part = new Tone.Part<TPartEvent>(
-            (time, event) => instrumentRef.current?.playChord(event.notes, event.duration, time),
+            (time, event) => instrumentRefs[event.lane].current?.playChord(event.notes, event.duration, time),
             [...events("chords", octave), ...events("bass", octave - BASS_OCTAVES_DOWN)],
         );
         part.start(0);
         return () => {
             part.dispose();
         };
-    }, [tracks, getStepTicks]);
+    }, [tracks, getStepTicks, instrumentRefs]);
 
     // Tempo, loop region, and the end of the grid when the loop is off.
     useEffect(() => {
@@ -247,7 +306,7 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
 
     const handlePause = () => {
         Tone.getTransport().pause();
-        instrumentRef.current?.releaseAll();
+        releaseAll();
         setIsPlaying(false);
         setIsPaused(true);
     };
@@ -290,12 +349,20 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     return (
         <SequencerContext.Provider
             value={{
-                selectedInstrument,
-                handleSelectInstrument: setSelectedInstrument,
+                instrumentsByLane,
+                handleSelectInstrument: (lane, instrument) =>
+                    setInstrumentsByLane((current) => ({ ...current, [lane]: instrument })),
                 effects,
-                handleEffectChange: (effect, value) => setEffects((current) => ({ ...current, [effect]: value })),
+                handleEffectChange: (bus, effect, value) =>
+                    setEffects((current) => ({ ...current, [bus]: { ...current[bus], [effect]: value } })),
                 effectsOn,
-                toggleEffect: (effect) => setEffectsOn((current) => ({ ...current, [effect]: !current[effect] })),
+                toggleEffect: (bus, effect) =>
+                    setEffectsOn((current) => ({
+                        ...current,
+                        [bus]: { ...current[bus], [effect]: !current[bus][effect] },
+                    })),
+                selectedTrack,
+                setSelectedTrack,
                 getLevels,
                 tempo,
                 handleTempoChange: setTempo,

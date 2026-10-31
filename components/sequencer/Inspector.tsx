@@ -11,11 +11,11 @@ import { cn } from "@/lib/utils";
 import { ChevronsLeft, ChevronsRight, Eraser, Power, Trash2, WandSparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTrack } from "../hooks/useTrack";
+import { TLane } from "../providers/Track.provider";
 import { dialogButton } from "./ExportMidiDialog";
 import { useGenerate } from "./hooks/useGenerate";
 import { useSequencer } from "./hooks/useSequencer";
-import { TLane } from "../providers/Track.provider";
-import { TEffectId, TEffects } from "./providers/Sequencer.provider";
+import { TBus, TEffectId, TEffects } from "./providers/Sequencer.provider";
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
     <h2 className="text-[11px] font-semibold tracking-widest text-daw-muted uppercase">
@@ -35,7 +35,7 @@ const Segmented = <T extends string | number>({
     onChange: (value: T) => void;
 }) => (
     <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-daw-sub">{label}</span>
+        <SectionTitle>{label}</SectionTitle>
         <div
             role="group"
             aria-label={label}
@@ -145,12 +145,12 @@ const EFFECTS: { id: TEffectId; name: string; description: string; params: TEffe
  * An effect's row: the name and settings open a dialog to adjust them, and the power icon turns the
  * effect on or off without losing its settings.
  */
-const EffectButton = ({ effect }: { effect: (typeof EFFECTS)[number] }) => {
+const BUS_NAMES: Record<TBus, string> = { master: "Master", chords: "Chords", bass: "Bass" };
+
+const EffectButton = ({ effect, bus }: { effect: (typeof EFFECTS)[number]; bus: TBus }) => {
     const { effects, handleEffectChange, effectsOn, toggleEffect } = useSequencer();
     const [open, setOpen] = useState(false);
-    const on = effectsOn[effect.id];
-    // Values only, to fit the row; the dialog names them.
-    const summary = effect.params.map((param) => param.format(effects[param.key])).join(" · ");
+    const on = effectsOn[bus][effect.id];
 
     return (
         <>
@@ -165,7 +165,7 @@ const EffectButton = ({ effect }: { effect: (typeof EFFECTS)[number] }) => {
                     aria-label={`Turn ${effect.name} ${on ? "off" : "on"}`}
                     aria-pressed={on}
                     title={on ? "On" : "Off"}
-                    onClick={() => toggleEffect(effect.id)}
+                    onClick={() => toggleEffect(bus, effect.id)}
                     className={cn(
                         "flex w-6 shrink-0 items-center justify-center border-r border-daw-line",
                         on ? "text-daw-accent" : "text-daw-muted",
@@ -191,11 +191,16 @@ const EffectButton = ({ effect }: { effect: (typeof EFFECTS)[number] }) => {
                 >
                     <DialogHeader>
                         <DialogTitle className="flex items-center justify-between text-[15px] font-bold">
-                            {effect.name}
+                            <span>
+                                {effect.name}
+                                <span className="ml-2 text-xs font-semibold text-daw-muted">
+                                    {BUS_NAMES[bus]}
+                                </span>
+                            </span>
                             <button
                                 type="button"
                                 aria-pressed={on}
-                                onClick={() => toggleEffect(effect.id)}
+                                onClick={() => toggleEffect(bus, effect.id)}
                                 className={cn(
                                     "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
                                     on
@@ -220,8 +225,8 @@ const EffectButton = ({ effect }: { effect: (typeof EFFECTS)[number] }) => {
                                 max={param.max}
                                 step={param.step}
                                 format={param.format}
-                                value={effects[param.key]}
-                                onChange={(value) => handleEffectChange(param.key, value)}
+                                value={effects[bus][param.key]}
+                                onChange={(value) => handleEffectChange(bus, param.key, value)}
                             />
                         ))}
                     </div>
@@ -241,8 +246,9 @@ const EffectButton = ({ effect }: { effect: (typeof EFFECTS)[number] }) => {
     );
 };
 
+// Labels wrap onto two lines in the narrow drawer columns.
 const actionButton =
-    "flex h-8.5 items-center justify-center gap-2 rounded-[7px] font-semibold disabled:cursor-not-allowed disabled:opacity-40";
+    "flex min-h-8.5 items-center justify-center gap-2 rounded-[7px] px-2 py-1 text-center leading-tight font-semibold disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:shrink-0";
 
 /** Lowest level shown by the meter, in dB. */
 const METER_FLOOR = -60;
@@ -252,14 +258,14 @@ const METER_MARKS = [0, -6, -12, -24, -48];
  * A stereo level meter. It reads the output level every frame and moves the bars itself, so the
  * sequencer doesn't re-render at 60 fps.
  */
-const VuMeter = () => {
+const VuMeter = ({ bus }: { bus: TBus }) => {
     const { getLevels } = useSequencer();
     const coverRefs = useRef<(HTMLDivElement | null)[]>([]);
 
     useEffect(() => {
         let frame = 0;
         const update = () => {
-            getLevels().forEach((db, channel) => {
+            getLevels(bus).forEach((db, channel) => {
                 const level = Math.min(1, Math.max(0, (db - METER_FLOOR) / -METER_FLOOR));
                 const cover = coverRefs.current[channel];
                 // The cover hides the unlit top of the gradient.
@@ -269,7 +275,7 @@ const VuMeter = () => {
         };
         update();
         return () => cancelAnimationFrame(frame);
-    }, [getLevels]);
+    }, [getLevels, bus]);
 
     return (
         <div className="flex h-60 w-2/3 gap-2" aria-hidden="true">
@@ -301,29 +307,40 @@ const VuMeter = () => {
     );
 };
 
-const GeneralPanel = () => {
-    const { selectedInstrument, handleSelectInstrument } = useSequencer();
+/** A bus's effects; a track also gets its instrument. */
+const BusPanel = ({ bus }: { bus: TBus }) => {
+    const { instrumentsByLane, handleSelectInstrument } = useSequencer();
 
     return (
         <div className="flex flex-col gap-5 p-4">
-            <Segmented
-                label="Instrument"
-                value={selectedInstrument}
-                options={[
-                    { value: "synth", label: "Synth" },
-                    { value: "piano", label: "Piano" },
-                ]}
-                onChange={handleSelectInstrument}
-            />
+            {bus !== "master" && (
+                <Segmented
+                    label="Instrument"
+                    value={instrumentsByLane[bus]}
+                    options={[
+                        { value: "synth", label: "Synth" },
+                        { value: "piano", label: "Piano" },
+                    ]}
+                    onChange={(instrument) => handleSelectInstrument(bus, instrument)}
+                />
+            )}
             <div className="flex flex-col gap-2">
                 <SectionTitle>Effects</SectionTitle>
                 {EFFECTS.map((effect) => (
-                    <EffectButton key={effect.id} effect={effect} />
+                    <EffectButton key={effect.id} effect={effect} bus={bus} />
                 ))}
             </div>
         </div>
     );
 };
+
+/** The output meter of a bus, filling the rest of its column. */
+const OutputSection = ({ bus }: { bus: TBus }) => (
+    <div className="flex min-h-40 flex-col gap-2 border-t border-daw-edge p-4">
+        <SectionTitle>Output</SectionTitle>
+        <VuMeter bus={bus} />
+    </div>
+);
 
 const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
     const { nbrSteps, selectedStep, selectedLane, selectedRange, selectedArea, setSelectedStep } =
@@ -388,7 +405,7 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                     {selectedRange
                         ? `${selectedRange.end - selectedRange.start} steps selected.`
                         : selectedStep === null
-                          ? "Click a chord or a step on the chord track to select it. Drag across steps or the ruler, or Shift-click, to select several."
+                          ? "Click or drag across steps to select them. Click a track name to manage the track."
                           : chordAt(selectedStep)
                             ? `Inside ${chordAt(selectedStep)?.name}. Drop a chord here to split it.`
                             : "Empty step. Drag a chord from the library onto it."}
@@ -417,7 +434,8 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                 <button
                     type="button"
                     onClick={() =>
-                        selectedArea && handleClearRange(selectedArea.start, selectedArea.end, lanes)
+                        selectedArea &&
+                        handleClearRange(selectedArea.start, selectedArea.end, lanes)
                     }
                     disabled={!hasChords}
                     title="Delete or Backspace"
@@ -427,7 +445,11 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                     )}
                 >
                     {selectedChord ? <Trash2 className="size-4" /> : <Eraser className="size-4" />}
-                    {selectedChord ? (selectedLane === "bass" ? "Delete note" : "Delete chord") : "Clear steps"}
+                    {selectedChord
+                        ? selectedLane === "bass"
+                            ? "Delete note"
+                            : "Delete chord"
+                        : "Clear steps"}
                 </button>
                 <button
                     type="button"
@@ -441,6 +463,45 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                 </button>
             </div>
         </div>
+    );
+};
+
+/** A whole track selected from its header: its Generate, instrument, effects and output meter. */
+const TrackPanel = ({ lane, onGenerate }: { lane: TLane; onGenerate: () => void }) => {
+    const bass = lane === "bass";
+    return (
+        <>
+            <div className="flex shrink-0 flex-col gap-3 border-b border-daw-edge p-4">
+                <span
+                    className={cn("font-mono text-xs", bass ? "text-daw-bass" : "text-daw-accent")}
+                >
+                    {BUS_NAMES[lane]} track
+                </span>
+                <button
+                    type="button"
+                    onClick={onGenerate}
+                    title={
+                        bass
+                            ? "Replaces the bass line with the roots of the chords"
+                            : "Replaces the chords with a progression in the key"
+                    }
+                    className={cn(
+                        actionButton,
+                        bass
+                            ? "border border-daw-bass text-daw-bass hover:bg-daw-bass/10"
+                            : "border border-daw-accent text-daw-accent hover:bg-daw-accent/10",
+                    )}
+                >
+                    <WandSparkles className="size-4" />
+                    <span className="text-xs">Generate</span>
+                </button>
+            </div>
+            {/* Pushed to the bottom of the column, like the master section in General. */}
+            <div className="daw-scroll flex min-h-0 flex-1 flex-col justify-end overflow-y-auto">
+                <BusPanel bus={lane} />
+                <OutputSection bus={lane} />
+            </div>
+        </>
     );
 };
 
@@ -458,7 +519,7 @@ const ColumnHeader = ({ title, children }: { title: string; children?: React.Rea
 export const Inspector = () => {
     const [open, setOpen] = useState(true);
     const { generateTrack, generateBass, generateSelection } = useGenerate();
-    const { fundamentalNote } = useSequencer();
+    const { selectedTrack } = useSequencer();
 
     if (!open) {
         return (
@@ -480,45 +541,16 @@ export const Inspector = () => {
     }
 
     return (
-        <aside className="flex shrink-0 border-r border-daw-edge bg-daw-panel">
+        // Clicks in the drawer keep the selection, so the panels can act on it.
+        <aside data-keeps-selection className="flex shrink-0 border-r border-daw-edge bg-daw-panel">
             <section aria-label="General" className="flex w-30 flex-col border-r border-daw-edge">
                 <ColumnHeader title="General" />
-                {/* Outside the scrolling area so it stays at the top of the column. */}
-                <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-daw-edge p-4">
-                    <button
-                        type="button"
-                        onClick={generateTrack}
-                        aria-label="Generate track"
-                        title={`Generate track: replaces the chords with a progression in ${fundamentalNote} major`}
-                        className={cn(
-                            actionButton,
-                            "border border-daw-accent px-2 text-daw-accent hover:bg-daw-accent/10",
-                        )}
-                    >
-                        <WandSparkles className="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={generateBass}
-                        aria-label="Generate bass"
-                        title="Generate bass: replaces the bass line with the roots of the chords"
-                        className={cn(
-                            actionButton,
-                            "border border-daw-bass px-2 text-daw-bass hover:bg-daw-bass/10",
-                        )}
-                    >
-                        <WandSparkles className="size-4" />
-                    </button>
-                </div>
                 <div className="daw-scroll flex min-h-0 flex-1 flex-col overflow-y-auto justify-end">
-                    <GeneralPanel />
-                    <div className="flex min-h-40 flex-col gap-2 border-t border-daw-edge p-4">
-                        <SectionTitle>Output</SectionTitle>
-                        <VuMeter />
-                    </div>
+                    <BusPanel bus="master" />
+                    <OutputSection bus="master" />
                 </div>
             </section>
-            <section aria-label="Selection" className="flex w-58 flex-col">
+            <section aria-label="Selection" className="flex w-30 flex-col">
                 <ColumnHeader title="Selection">
                     <button
                         type="button"
@@ -530,9 +562,16 @@ export const Inspector = () => {
                         <ChevronsLeft className="size-4" />
                     </button>
                 </ColumnHeader>
-                <div className="daw-scroll min-h-0 flex-1 overflow-y-auto">
-                    <SelectionPanel onGenerate={generateSelection} />
-                </div>
+                {selectedTrack ? (
+                    <TrackPanel
+                        lane={selectedTrack}
+                        onGenerate={selectedTrack === "bass" ? generateBass : generateTrack}
+                    />
+                ) : (
+                    <div className="daw-scroll min-h-0 flex-1 overflow-y-auto">
+                        <SelectionPanel onGenerate={generateSelection} />
+                    </div>
+                )}
             </section>
         </aside>
     );

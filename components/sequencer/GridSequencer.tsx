@@ -92,6 +92,8 @@ export const GridSequencer = () => {
         selectedRange,
         selectedArea,
         extendSelection,
+        selectedTrack,
+        setSelectedTrack,
     } = useSequencer();
     const chordsTrack = useTrack("chords");
     const bassTrack = useTrack("bass");
@@ -141,7 +143,8 @@ export const GridSequencer = () => {
                 el?.contains(target),
             );
             if (inGrid) return;
-            if (target.closest("button, input, select, textarea, a, label, [draggable='true'], [role='dialog']")) return;
+            const keeps = "button, input, select, textarea, a, label, [draggable='true'], [role='dialog'], [data-keeps-selection]";
+            if (target.closest(keeps)) return;
             clearSelection();
         };
         const handleKey = (e: KeyboardEvent) => {
@@ -313,15 +316,22 @@ export const GridSequencer = () => {
         const selectedChord = selectedChordOn(lane);
         return (
             <>
-                <div
+                {/* The track header selects the whole track. */}
+                <button
+                    type="button"
+                    aria-pressed={selectedTrack === lane}
+                    title={`Select the ${lane} track`}
+                    onClick={() => setSelectedTrack(selectedTrack === lane ? null : lane)}
                     className={cn(
-                        "sticky left-0 z-30 flex items-center justify-center border-r border-b border-daw-edge bg-[#26262a] text-[10px] font-semibold tracking-widest",
+                        "sticky left-0 z-30 flex items-center justify-center border-r border-b border-daw-edge text-[10px] font-semibold tracking-widest hover:bg-[#2e2e33]",
                         lane === "bass" ? "text-daw-bass" : "text-daw-muted",
+                        // Opaque, since the piano roll scrolls under the sticky header.
+                        selectedTrack === lane ? "bg-[#2c3a55] text-white" : "bg-[#26262a]",
                     )}
                     style={{ top: config.top }}
                 >
                     {config.label}
-                </div>
+                </button>
                 <div className="sticky z-20 border-b border-daw-edge bg-[#202023]" style={{ top: config.top }}>
                     <div
                         ref={(el) => {
@@ -425,6 +435,12 @@ export const GridSequencer = () => {
                                 aria-hidden="true"
                                 className="pointer-events-none absolute inset-y-0 z-10 rounded-sm border-2 border-daw-select bg-daw-select/15"
                                 style={{ left: laneHighlight.x, width: laneHighlight.w }}
+                            />
+                        )}
+                        {selectedTrack === lane && (
+                            <div
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-0 z-10 border-2 border-daw-select/70"
                             />
                         )}
                         {dropPreview(lane)}

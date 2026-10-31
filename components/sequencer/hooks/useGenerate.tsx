@@ -20,7 +20,8 @@ const bassFromChords = (chords: TTrackData[], start: number, end: number): TTrac
  * bass line following the chords' roots, over the whole track or only the selection.
  */
 export const useGenerate = () => {
-    const { nbrSteps, totalSteps, fundamentalNote, selectedArea, selectedLane, setSelectedStep } = useSequencer();
+    const { nbrSteps, totalSteps, fundamentalNote, selectedStep, selectedArea, selectedLane, setSelectedStep } =
+        useSequencer();
     const { ListChordsByNotes } = useChord();
     const { setTracks } = useTrack();
     const lastProgressionRef = useRef<number | null>(null);
@@ -38,11 +39,14 @@ export const useGenerate = () => {
         });
     };
 
-    /** Replaces the whole chord track and clears the selection; the bass is left as it is. */
+    /**
+     * Replaces the whole chord track and clears a step selection, keeping a selected track; the bass
+     * is left as it is.
+     */
     const generateTrack = () => {
         const chords = progression(0, totalSteps);
         setTracks((current) => ({ ...current, chords }));
-        setSelectedStep(null);
+        if (selectedStep !== null) setSelectedStep(null);
     };
 
     /** Replaces the whole bass line with the roots of the current chords. */

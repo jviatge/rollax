@@ -1,13 +1,17 @@
 import { useTrack } from "../hooks/useTrack";
+import { TLane } from "../providers/Track.provider";
 import { useSequencer } from "./hooks/useSequencer";
 
 export const StatusBar = () => {
-    const { selectedInstrument, tempo, nbrMeasures, nbrSteps } = useSequencer();
+    const { instrumentsByLane, tempo, nbrMeasures, nbrSteps } = useSequencer();
+    const instrumentName = (lane: TLane) => (instrumentsByLane[lane] === "piano" ? "Piano (samples)" : "Synth");
     const { trackData, tracks } = useTrack();
 
     return (
         <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-daw-edge bg-daw-bar px-3 text-[11px] text-daw-muted">
-            <span>{selectedInstrument === "piano" ? "Piano (samples)" : "Synth"}</span>
+            <span>
+                Chords: {instrumentName("chords")} · Bass: {instrumentName("bass")}
+            </span>
             <span>{tempo} BPM</span>
             <span>
                 {nbrMeasures} {nbrMeasures > 1 ? "measures" : "measure"} × 1/{nbrSteps}
