@@ -15,6 +15,7 @@ import { notes } from "@/notes";
 import { ExportMidiDialog } from "./ExportMidiDialog";
 import { ImportMidiDialog } from "./ImportMidiDialog";
 import { buildMidi, downloadMidi, midiToTrack, parseMidi } from "./midi";
+import { BASS_OCTAVES_DOWN } from "./providers/Sequencer.provider";
 import { useChord } from "./hooks/useChord";
 import { useSequencer } from "./hooks/useSequencer";
 
@@ -101,7 +102,8 @@ export const TransportBar = () => {
         setSelectedStep,
     } = useSequencer();
     const { ListChordsByNotes } = useChord();
-    const { trackData, handleReplaceTrack } = useTrack();
+    const { trackData, tracks, setTracks } = useTrack();
+    const hasComposition = trackData.length > 0 || tracks.bass.length > 0;
     // The typed tempo while the field is being edited; otherwise the field shows the current tempo.
     const [tempoDraft, setTempoDraft] = useState<string | null>(null);
     const tempoText = tempoDraft ?? String(tempo);
@@ -149,12 +151,24 @@ export const TransportBar = () => {
         });
         if (midi.tempo) handleTempoChange(clampTempo(Math.round(midi.tempo)));
         handleNbrMeasuresChange(nbrMeasures);
-        handleReplaceTrack(track);
+        // The import replaces the whole composition, bass included, in one undo step.
+        setTracks(() => ({ chords: track, bass: [] }));
         setSelectedStep(null);
     };
 
     const handleExport = (filename: string) =>
-        downloadMidi(buildMidi({ trackData, nbrSteps, totalSteps, tempo, octave }), filename);
+        downloadMidi(
+            buildMidi({
+                parts: [
+                    { data: tracks.chords, octave },
+                    { data: tracks.bass, octave: octave - BASS_OCTAVES_DOWN },
+                ],
+                nbrSteps,
+                totalSteps,
+                tempo,
+            }),
+            filename,
+        );
 
     const togglePlayback = useEffectEvent(() => (isPlaying ? handlePause() : handlePlay()));
 
@@ -296,8 +310,8 @@ export const TransportBar = () => {
             </div>
 
             <div className="flex justify-end gap-2">
-                <ImportMidiDialog hasTrack={trackData.length > 0} onImport={handleImport} />
-                <ExportMidiDialog disabled={trackData.length === 0} onExport={handleExport} />
+                <ImportMidiDialog hasTrack={hasComposition} onImport={handleImport} />
+                <ExportMidiDialog disabled={!hasComposition} onExport={handleExport} />
             </div>
         </header>
     );

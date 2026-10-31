@@ -3,7 +3,7 @@ import { useSequencer } from "./hooks/useSequencer";
 
 export const StatusBar = () => {
     const { selectedInstrument, tempo, nbrMeasures, nbrSteps } = useSequencer();
-    const { trackData } = useTrack();
+    const { trackData, tracks } = useTrack();
 
     return (
         <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-daw-edge bg-daw-bar px-3 text-[11px] text-daw-muted">
@@ -14,6 +14,9 @@ export const StatusBar = () => {
             </span>
             <span>
                 {trackData.length} {trackData.length === 1 ? "chord" : "chords"}
+            </span>
+            <span>
+                {tracks.bass.length} bass {tracks.bass.length === 1 ? "note" : "notes"}
             </span>
         </footer>
     );

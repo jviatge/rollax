@@ -1,7 +1,9 @@
-/** Drag-and-drop payload for chords: a new chord from the library, or a chord moved on the grid. */
+import { TLane } from "@/components/providers/Track.provider";
+
+/** Drag-and-drop payload: a new chord from the library, or a chord or bass note moved within its track. */
 export const CHORD_DRAG_TYPE = "application/x-rollax-chord";
 
-export type TChordDrag = { name: string; notes: string[] } | { fromStep: number };
+export type TChordDrag = { name: string; notes: string[] } | { fromStep: number; lane: TLane };
 
 export const setChordDrag = (e: React.DragEvent, payload: TChordDrag) => {
     e.dataTransfer.setData(CHORD_DRAG_TYPE, JSON.stringify(payload));

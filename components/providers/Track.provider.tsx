@@ -9,32 +9,43 @@ export type TTrackData = {
     name?: string;
 };
 
-/** `record: false` replaces the track and clears the history, for changes that can't be undone. */
-type TSetTrackOptions = { record?: boolean };
+/** The grid's tracks: the chords, and the bass line, whose entries hold a single note. */
+export type TLane = "chords" | "bass";
+export type TTracks = Record<TLane, TTrackData[]>;
 
-type THistory = { past: TTrackData[][]; present: TTrackData[]; future: TTrackData[][] };
+/** `record: false` replaces the tracks and clears the history, for changes that can't be undone. */
+export type TSetTrackOptions = { record?: boolean };
+
+type THistory = { past: TTracks[]; present: TTracks; future: TTracks[] };
+
+const EMPTY_TRACKS: TTracks = { chords: [], bass: [] };
 
 const HISTORY_LIMIT = 100;
 
 export const TrackContext = createContext({
-    trackData: [] as TTrackData[],
-    setTrackData: (trackData: TTrackData[], options?: TSetTrackOptions) => {
-        console.warn("setTrackData not implemented", trackData, options);
+    tracks: EMPTY_TRACKS,
+    /** Updates the tracks from their current value; one call is one undo step. */
+    setTracks: (update: (tracks: TTracks) => TTracks, options?: TSetTrackOptions) => {
+        console.warn("setTracks not implemented", update, options);
     },
     undo: () => {},
     redo: () => {},
 });
 
 export const TrackProvider = ({ children }: { children: React.ReactNode }) => {
-    const [history, setHistory] = useState<THistory>({ past: [], present: [], future: [] });
+    const [history, setHistory] = useState<THistory>({ past: [], present: EMPTY_TRACKS, future: [] });
 
-    const setTrackData = useCallback((trackData: TTrackData[], { record = true }: TSetTrackOptions = {}) => {
-        setHistory(({ past, present, future }) => {
-            if (!record) return { past: [], present: trackData, future: [] };
-            if (JSON.stringify(trackData) === JSON.stringify(present)) return { past, present, future };
-            return { past: [...past, present].slice(-HISTORY_LIMIT), present: trackData, future: [] };
-        });
-    }, []);
+    const setTracks = useCallback(
+        (update: (tracks: TTracks) => TTracks, { record = true }: TSetTrackOptions = {}) => {
+            setHistory(({ past, present, future }) => {
+                const next = update(present);
+                if (!record) return { past: [], present: next, future: [] };
+                if (JSON.stringify(next) === JSON.stringify(present)) return { past, present, future };
+                return { past: [...past, present].slice(-HISTORY_LIMIT), present: next, future: [] };
+            });
+        },
+        [],
+    );
 
     const undo = useCallback(() => {
         setHistory(({ past, present, future }) =>
@@ -69,8 +80,8 @@ export const TrackProvider = ({ children }: { children: React.ReactNode }) => {
     return (
         <TrackContext.Provider
             value={{
-                trackData: history.present,
-                setTrackData,
+                tracks: history.present,
+                setTracks,
                 undo,
                 redo,
             }}

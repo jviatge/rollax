@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { TrackContext, TTrackData } from "../providers/Track.provider";
+import { TLane, TrackContext, TSetTrackOptions, TTrackData } from "../providers/Track.provider";
 
 /**
  * `track` with `chords` written over steps `start` to `end` (exclusive). Chords crossing an edge
@@ -17,8 +17,12 @@ export const writeRange = <T extends TTrackData>(track: T[], start: number, end:
     return [...outside, ...chords].sort((a, b) => a.step - b.step);
 };
 
-export const useTrack = () => {
-    const { trackData, setTrackData, undo, redo } = useContext(TrackContext);
+/** Reads and edits one track (the chords by default); changes to several tracks go through `setTracks`. */
+export const useTrack = (lane: TLane = "chords") => {
+    const { tracks, setTracks, undo, redo } = useContext(TrackContext);
+    const trackData = tracks[lane];
+    const setTrackData = (data: TTrackData[], options?: TSetTrackOptions) =>
+        setTracks((current) => ({ ...current, [lane]: data }), options);
 
     /** The chord sounding at `step`, whether it starts there or earlier. */
     const getChordAt = (step: number) =>
@@ -78,16 +82,24 @@ export const useTrack = () => {
      * whose tracks were laid out for the old grid.
      */
     const handleRescale = (ratio: number, totalSteps: number) => {
-        const rescaled: TTrackData[] = trackData
-            .map((data) => ({
-                ...data,
-                step: Math.round(data.step * ratio),
-                len: Math.max(1, Math.round(data.len * ratio)),
-            }))
-            .filter((data) => data.step < totalSteps)
-            .map((data) => ({ ...data, len: Math.min(data.len, totalSteps - data.step) }));
-        setTrackData(rescaled, { record: false });
+        const rescale = (track: TTrackData[]) =>
+            track
+                .map((data) => ({
+                    ...data,
+                    step: Math.round(data.step * ratio),
+                    len: Math.max(1, Math.round(data.len * ratio)),
+                }))
+                .filter((data) => data.step < totalSteps)
+                .map((data) => ({ ...data, len: Math.min(data.len, totalSteps - data.step) }));
+        setTracks((current) => ({ chords: rescale(current.chords), bass: rescale(current.bass) }), { record: false });
     };
+
+    /** Clears steps `start` to `end` (exclusive) on each of `lanes` in one undo step. */
+    const handleClearRange = (start: number, end: number, lanes: TLane[]) =>
+        setTracks((current) => ({
+            ...current,
+            ...Object.fromEntries(lanes.map((key) => [key, writeRange(current[key], start, end, [])])),
+        }));
 
     return {
         trackData,
@@ -99,6 +111,9 @@ export const useTrack = () => {
         handleReplaceRange,
         handleDeleteChord,
         handleRescale,
+        handleClearRange,
+        tracks,
+        setTracks,
         undo,
         redo,
     };

@@ -2,15 +2,17 @@ import { blocksShortcuts } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import { noteIndex, notes } from "@/notes";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
-import { TTrackData } from "../providers/Track.provider";
+import { TLane, TTrackData } from "../providers/Track.provider";
 import { useTrack, writeRange } from "../hooks/useTrack";
 import { getChordDrag, hasChordDrag, setChordDrag } from "./chordDrag";
 import { useSequencer } from "./hooks/useSequencer";
+import { BASS_OCTAVES_DOWN } from "./providers/Sequencer.provider";
 
 const KEY_W = 64;
 const ROW_H = 20;
 const RULER_H = 28;
 const LANE_H = 52;
+const BASS_H = 40;
 const MIN_COL_W = 36;
 
 const gridLines = (measureW: number, colW: number, measureColor: string, stepColor: string) => ({
@@ -57,7 +59,25 @@ const DropPreview = ({ x, w }: { x: number; w: number }) => (
     />
 );
 
-type TResize = { fromStep: number; edge: "start" | "end"; step: number; len: number };
+type TResize = { lane: TLane; fromStep: number; edge: "start" | "end"; step: number; len: number };
+
+/** How each track is drawn: its label, sticky offset below the ruler, region size, and colors. */
+const LANES: Record<TLane, { label: string; top: number; region: string; colors: string; handle: string }> = {
+    chords: {
+        label: "CHORDS",
+        top: RULER_H,
+        region: "top-1.75 h-9.5",
+        colors: "bg-daw-accent text-daw-accent-ink",
+        handle: "bg-daw-accent-ink/50",
+    },
+    bass: {
+        label: "BASS",
+        top: RULER_H + LANE_H,
+        region: "top-1 h-8",
+        colors: "bg-daw-bass text-daw-bass-ink",
+        handle: "bg-daw-bass-ink/50",
+    },
+};
 
 export const GridSequencer = () => {
     const {
@@ -68,23 +88,22 @@ export const GridSequencer = () => {
         octave,
         selectedStep,
         setSelectedStep,
+        selectedLane,
         selectedRange,
         selectedArea,
         extendSelection,
     } = useSequencer();
-    const {
-        trackData,
-        handleChangeChord,
-        handleMoveChord,
-        handleResizeChord,
-        handleReplaceRange,
-    } = useTrack();
-    const [dragStep, setDragStep] = useState<number | null>(null);
+    const chordsTrack = useTrack("chords");
+    const bassTrack = useTrack("bass");
+    const trackApi: Record<TLane, ReturnType<typeof useTrack>> = { chords: chordsTrack, bass: bassTrack };
+    const { tracks, handleClearRange } = chordsTrack;
+    // The step under a drag, on the track it is over (the piano roll counts as the chord track).
+    const [drag, setDrag] = useState<{ lane: TLane; step: number } | null>(null);
     // The placed chord being dragged, kept because a drag's data can only be read on drop.
-    const [movingChord, setMovingChord] = useState<TTrackData | null>(null);
+    const [moving, setMoving] = useState<{ lane: TLane; chord: TTrackData } | null>(null);
     const [resize, setResize] = useState<TResize | null>(null);
     const [selecting, setSelecting] = useState(false);
-    const laneRef = useRef<HTMLDivElement>(null);
+    const laneRefs = useRef<Record<TLane, HTMLDivElement | null>>({ chords: null, bass: null });
     const rulerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [viewW, setViewW] = useState(0);
@@ -97,26 +116,31 @@ export const GridSequencer = () => {
         const observer = new ResizeObserver(([entry]) => setViewW(entry.contentRect.width));
         observer.observe(el);
         // Open centered on the octave the chords play in.
-        const octaveCenter = RULER_H + LANE_H + (nbrNotes - (octave - baseOctave + 1) * 12 + 6) * ROW_H;
+        const octaveCenter = RULER_H + LANE_H + BASS_H + (nbrNotes - (octave - baseOctave + 1) * 12 + 6) * ROW_H;
         el.scrollTop = Math.max(0, octaveCenter - el.clientHeight / 2);
         return () => observer.disconnect();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const clearSelection = useEffectEvent(() => setSelectedStep(null));
-    // Removes the chord parts inside the selection, splitting a chord selected in its middle.
+    // Removes what the selection covers on its track (or every track), splitting chords selected in
+    // their middle.
     const deleteSelection = useEffectEvent(() => {
-        if (selectedArea) handleReplaceRange(selectedArea.start, selectedArea.end, []);
+        if (!selectedArea) return;
+        handleClearRange(selectedArea.start, selectedArea.end, selectedLane === "all" ? ["chords", "bass"] : [selectedLane]);
     });
 
-    // A press outside the ruler and the chord track, or Escape, clears the selection. Controls are
-    // left out so they can act on it, and so is the grid's own scrollbar. Delete or Backspace
-    // deletes what is selected.
+    // A press outside the ruler and the tracks, or Escape, clears the selection. Controls are left
+    // out so they can act on it, and so is the grid's own scrollbar. Delete or Backspace deletes
+    // what is selected.
     useEffect(() => {
         const handlePointer = (e: PointerEvent) => {
             const target = e.target;
             if (!(target instanceof Element) || target === scrollRef.current) return;
-            if (laneRef.current?.contains(target) || rulerRef.current?.contains(target)) return;
+            const inGrid = [laneRefs.current.chords, laneRefs.current.bass, rulerRef.current].some((el) =>
+                el?.contains(target),
+            );
+            if (inGrid) return;
             if (target.closest("button, input, select, textarea, a, label, [draggable='true'], [role='dialog']")) return;
             clearSelection();
         };
@@ -139,24 +163,42 @@ export const GridSequencer = () => {
     const colW = Math.max(MIN_COL_W, Math.floor((viewW - KEY_W) / totalSteps) || MIN_COL_W);
     const gridW = colW * totalSteps;
     const measureW = colW * nbrSteps;
+    const steps = [...Array(totalSteps).keys()];
+
     // While an edge is dragged, the chord is drawn at its preview size and the chords it covers are
     // split as they will be on release. `id` keeps the resized chord's original step.
-    const shownTrack = (
-        resize
+    const shownTrack = (lane: TLane) =>
+        (resize?.lane === lane
             ? writeRange<TTrackData & { id: number | null }>(
-                  trackData.filter((data) => data.step !== resize.fromStep).map((data) => ({ ...data, id: null })),
+                  tracks[lane].filter((data) => data.step !== resize.fromStep).map((data) => ({ ...data, id: null })),
                   resize.step,
                   resize.step + resize.len,
-                  trackData
+                  tracks[lane]
                       .filter((data) => data.step === resize.fromStep)
                       .map((data) => ({ ...data, id: resize.fromStep, step: resize.step, len: resize.len })),
               )
-            : trackData.map((data) => ({ ...data, id: null }))
-    ).map((data) => ({ ...data, id: data.id ?? data.step }));
-    const selectedChord = selectedRange ? undefined : shownTrack.find((data) => data.id === selectedStep);
-    const selectedNotes = new Set(selectedChord?.chord.map(noteIndex) ?? []);
-    const steps = [...Array(totalSteps).keys()];
+            : tracks[lane].map((data) => ({ ...data, id: null }))
+        ).map((data) => ({ ...data, id: data.id ?? data.step }));
+    const shown: Record<TLane, ReturnType<typeof shownTrack>> = { chords: shownTrack("chords"), bass: shownTrack("bass") };
 
+    // A chord (or bass note) is selected when its track's selection starts on it.
+    const selectedChordOn = (lane: TLane) =>
+        selectedRange || selectedLane !== lane ? undefined : shown[lane].find((data) => data.id === selectedStep);
+    const highlightOn = (lane: TLane) => {
+        if (selectedLane !== lane && selectedLane !== "all") return null;
+        const chord = selectedChordOn(lane);
+        return selectedRange
+            ? { x: selectedRange.start * colW, w: (selectedRange.end - selectedRange.start) * colW }
+            : chord
+              ? { x: chord.step * colW, w: chord.len * colW }
+              : selectedStep !== null
+                ? { x: selectedStep * colW, w: colW }
+                : null;
+    };
+    const highlight = highlightOn(selectedLane === "all" ? "chords" : selectedLane);
+    const inRange = (step: number) => !!selectedRange && step >= selectedRange.start && step < selectedRange.end;
+
+    const selectedNotes = new Set(selectedChordOn("chords")?.chord.map(noteIndex) ?? []);
     // Top row is the highest note.
     const rows = [...Array(nbrNotes).keys()].map((row) => {
         const index = nbrNotes - 1 - row;
@@ -170,53 +212,44 @@ export const GridSequencer = () => {
         };
     });
     const rowOf = (note: string) => nbrNotes - 1 - ((octave - baseOctave) * 12 + noteIndex(note));
-    const highlight = selectedRange
-        ? { x: selectedRange.start * colW, w: (selectedRange.end - selectedRange.start) * colW }
-        : selectedChord
-          ? { x: selectedChord.step * colW, w: selectedChord.len * colW }
-          : selectedStep !== null
-            ? { x: selectedStep * colW, w: colW }
-            : null;
-    const inRange = (step: number) => !!selectedRange && step >= selectedRange.start && step < selectedRange.end;
 
-    // The chord track and the piano roll both start at the grid origin, so the step under
-    // the pointer comes from its x offset.
+    // The ruler, the tracks and the piano roll all start at the grid origin, so the step under the
+    // pointer comes from its x offset.
     const stepAt = (e: React.DragEvent<HTMLElement>) =>
         Math.min(
             totalSteps - 1,
             Math.max(0, Math.floor((e.clientX - e.currentTarget.getBoundingClientRect().left) / colW)),
         );
-    // The ruler and the chord track share the grid origin, so either gives the step under the pointer.
-    const laneStepAt = (clientX: number) =>
+    const rulerStepAt = (clientX: number) =>
         Math.min(
             totalSteps - 1,
-            Math.max(0, Math.floor((clientX - (laneRef.current?.getBoundingClientRect().left ?? 0)) / colW)),
+            Math.max(0, Math.floor((clientX - (rulerRef.current?.getBoundingClientRect().left ?? 0)) / colW)),
         );
-    // Pressing a step selects it, and dragging across empty steps or the ruler, or Shift-clicking,
-    // selects a range.
-    const startSelect = (e: React.PointerEvent<HTMLElement>, step = laneStepAt(e.clientX)) => {
+    // Pressing a step selects it on its track, and dragging across empty steps or the ruler, or
+    // Shift-clicking, selects a range. The ruler selects on every track.
+    const startSelect = (e: React.PointerEvent<HTMLElement>, lane: TLane | "all", step = rulerStepAt(e.clientX)) => {
         if (e.button !== 0) return;
         if (e.shiftKey) extendSelection(step);
-        else setSelectedStep(step);
+        else setSelectedStep(step, lane);
         e.currentTarget.setPointerCapture(e.pointerId);
         setSelecting(true);
     };
-    const moveSelect = (e: React.PointerEvent<HTMLElement>) => {
-        if (selecting) extendSelection(laneStepAt(e.clientX));
-    };
     const selectHandlers = {
-        onPointerMove: moveSelect,
+        onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
+            if (selecting) extendSelection(rulerStepAt(e.clientX));
+        },
         onPointerUp: () => setSelecting(false),
         onPointerCancel: () => setSelecting(false),
     };
-    const startResize = (e: React.PointerEvent<HTMLSpanElement>, data: TTrackData, edge: TResize["edge"]) => {
+
+    const startResize = (e: React.PointerEvent<HTMLSpanElement>, lane: TLane, data: TTrackData, edge: TResize["edge"]) => {
         e.preventDefault();
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
-        setResize({ fromStep: data.step, edge, step: data.step, len: data.len });
+        setResize({ lane, fromStep: data.step, edge, step: data.step, len: data.len });
     };
     const moveResize = (e: React.PointerEvent<HTMLSpanElement>) => {
-        const lane = laneRef.current;
+        const lane = resize && laneRefs.current[resize.lane];
         if (!resize || !lane) return;
         // Snap the dragged edge to the nearest step line, inside the grid.
         const line = Math.round((e.clientX - lane.getBoundingClientRect().left) / colW);
@@ -232,39 +265,175 @@ export const GridSequencer = () => {
     };
     const endResize = () => {
         if (!resize) return;
-        handleResizeChord(resize.fromStep, resize.step, resize.len, totalSteps);
-        if (selectedStep === resize.fromStep) setSelectedStep(resize.step);
+        trackApi[resize.lane].handleResizeChord(resize.fromStep, resize.step, resize.len, totalSteps);
+        if (selectedLane === resize.lane && selectedStep === resize.fromStep) setSelectedStep(resize.step);
         setResize(null);
     };
 
-    const dropHandlers = {
+    // Library chords drop on either track (the bass track keeps the root); a placed chord only
+    // moves within its own track.
+    const dropHandlers = (lane: TLane) => ({
         onDragOver: (e: React.DragEvent<HTMLDivElement>) => {
-            if (!hasChordDrag(e)) return;
+            if (!hasChordDrag(e) || (moving && moving.lane !== lane)) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = e.dataTransfer.effectAllowed === "move" ? "move" : "copy";
-            setDragStep(stepAt(e));
+            setDrag({ lane, step: stepAt(e) });
         },
         onDragLeave: (e: React.DragEvent<HTMLDivElement>) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragStep(null);
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrag(null);
         },
         onDrop: (e: React.DragEvent<HTMLDivElement>) => {
             const payload = getChordDrag(e);
-            setDragStep(null);
-            setMovingChord(null);
+            setDrag(null);
+            setMoving(null);
             if (!payload) return;
             e.preventDefault();
             const step = stepAt(e);
             if ("fromStep" in payload) {
-                handleMoveChord(payload.fromStep, step, totalSteps);
+                if (payload.lane !== lane) return;
+                trackApi[lane].handleMoveChord(payload.fromStep, step, totalSteps);
+            } else if (lane === "bass") {
+                trackApi.bass.handleChangeChord([payload.notes[0]], step, payload.notes[0]);
             } else {
-                handleChangeChord(payload.notes, step, payload.name);
+                trackApi.chords.handleChangeChord(payload.notes, step, payload.name);
             }
-            setSelectedStep(step);
+            setSelectedStep(step, lane);
         },
-    };
+    });
     // A moved chord keeps its length, cut only at the grid end, and replaces what it covers.
-    const previewLen = dragStep === null ? 1 : Math.min(movingChord?.len ?? 1, totalSteps - dragStep);
-    const dropPreview = dragStep !== null && <DropPreview x={dragStep * colW} w={previewLen * colW} />;
+    const dropPreview = (lane: TLane) => {
+        if (drag?.lane !== lane) return null;
+        const len = Math.min(moving?.lane === lane ? moving.chord.len : 1, totalSteps - drag.step);
+        return <DropPreview x={drag.step * colW} w={len * colW} />;
+    };
+
+    const renderLane = (lane: TLane) => {
+        const config = LANES[lane];
+        const laneHighlight = highlightOn(lane);
+        const selectedChord = selectedChordOn(lane);
+        return (
+            <>
+                <div
+                    className={cn(
+                        "sticky left-0 z-30 flex items-center justify-center border-r border-b border-daw-edge bg-[#26262a] text-[10px] font-semibold tracking-widest",
+                        lane === "bass" ? "text-daw-bass" : "text-daw-muted",
+                    )}
+                    style={{ top: config.top }}
+                >
+                    {config.label}
+                </div>
+                <div className="sticky z-20 border-b border-daw-edge bg-[#202023]" style={{ top: config.top }}>
+                    <div
+                        ref={(el) => {
+                            laneRefs.current[lane] = el;
+                        }}
+                        className="relative h-full"
+                        style={gridLines(measureW, colW, "#3a3a3f", "#2b2b2f")}
+                        {...dropHandlers(lane)}
+                    >
+                        {steps.map((step) => (
+                            <button
+                                key={step}
+                                type="button"
+                                aria-label={`${lane === "bass" ? "Bass, bar" : "Bar"} ${Math.floor(step / nbrSteps) + 1}, step ${(step % nbrSteps) + 1}`}
+                                onPointerDown={(e) => startSelect(e, lane, step)}
+                                {...selectHandlers}
+                                // Keyboard activation; pointer presses are handled above.
+                                onClick={(e) => e.detail === 0 && setSelectedStep(step, lane)}
+                                className={cn(
+                                    "absolute inset-y-0 touch-none hover:bg-white/5",
+                                    laneHighlight &&
+                                        (inRange(step) || (selectedStep === step && !selectedChord)) &&
+                                        "bg-daw-select/25",
+                                )}
+                                style={{ left: step * colW, width: colW }}
+                            />
+                        ))}
+                        {shown[lane].map((data) => (
+                            <div
+                                key={data.id}
+                                className={cn("group absolute", config.region)}
+                                style={{ left: data.step * colW + 2, width: data.len * colW - 4 }}
+                            >
+                                <button
+                                    type="button"
+                                    draggable={!resize}
+                                    onDragStart={(e) => {
+                                        setChordDrag(e, { fromStep: data.id, lane });
+                                        const chord = tracks[lane].find((entry) => entry.step === data.id);
+                                        setMoving(chord ? { lane, chord } : null);
+                                    }}
+                                    onDragEnd={() => {
+                                        setMoving(null);
+                                        setDrag(null);
+                                    }}
+                                    onClick={(e) => {
+                                        // A click past the first step selects that step, so a chord can split this one.
+                                        const offset = e.clientX - e.currentTarget.getBoundingClientRect().left + 2;
+                                        // Keyboard clicks have no pointer position and select the first step.
+                                        const step =
+                                            data.step + Math.min(data.len - 1, Math.max(0, Math.floor(offset / colW)));
+                                        if (e.shiftKey) extendSelection(step);
+                                        else setSelectedStep(step, lane);
+                                    }}
+                                    className={cn(
+                                        "flex size-full cursor-grab flex-col items-start justify-center overflow-hidden rounded-md px-3 text-left active:cursor-grabbing",
+                                        config.colors,
+                                    )}
+                                >
+                                    <span className="text-[13px] leading-tight font-bold">{data.name}</span>
+                                    {lane === "chords" ? (
+                                        <span className="font-mono text-[10px] whitespace-nowrap">{data.chord.join(" ")}</span>
+                                    ) : (
+                                        data.len * colW > 48 && (
+                                            <span className="font-mono text-[10px] leading-none whitespace-nowrap">
+                                                {data.chord[0]}
+                                                {octave - BASS_OCTAVES_DOWN}
+                                            </span>
+                                        )
+                                    )}
+                                </button>
+                                {(["start", "end"] as const).map((edge) => (
+                                    <span
+                                        key={edge}
+                                        aria-hidden="true"
+                                        onPointerDown={(e) => startResize(e, lane, data, edge)}
+                                        onPointerMove={moveResize}
+                                        onPointerUp={endResize}
+                                        onPointerCancel={() => setResize(null)}
+                                        className={cn(
+                                            "absolute inset-y-0 z-10 flex w-2 cursor-ew-resize touch-none items-center justify-center",
+                                            edge === "start" ? "left-0" : "right-0",
+                                        )}
+                                    >
+                                        <span
+                                            className={cn(
+                                                "h-4 w-0.5 rounded-full opacity-0 group-hover:opacity-100",
+                                                config.handle,
+                                                resize?.lane === lane &&
+                                                    resize.fromStep === data.id &&
+                                                    resize.edge === edge &&
+                                                    "opacity-100",
+                                            )}
+                                        />
+                                    </span>
+                                ))}
+                            </div>
+                        ))}
+                        {laneHighlight && (
+                            <div
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-y-0 z-10 rounded-sm border-2 border-daw-select bg-daw-select/15"
+                                style={{ left: laneHighlight.x, width: laneHighlight.w }}
+                            />
+                        )}
+                        {dropPreview(lane)}
+                        <Playhead colW={colW} />
+                    </div>
+                </div>
+            </>
+        );
+    };
 
     return (
         <div ref={scrollRef} className="daw-scroll relative min-h-0 flex-1 overflow-auto">
@@ -273,7 +442,7 @@ export const GridSequencer = () => {
                 style={{
                     width: KEY_W + gridW,
                     gridTemplateColumns: `${KEY_W}px ${gridW}px`,
-                    gridTemplateRows: `${RULER_H}px ${LANE_H}px auto`,
+                    gridTemplateRows: `${RULER_H}px ${LANE_H}px ${BASS_H}px auto`,
                 }}
             >
                 {/* Ruler */}
@@ -283,7 +452,7 @@ export const GridSequencer = () => {
                         ref={rulerRef}
                         className="relative h-full cursor-text touch-none select-none"
                         style={gridLines(measureW, colW, "#4a4a50", "#36363b")}
-                        onPointerDown={(e) => startSelect(e)}
+                        onPointerDown={(e) => startSelect(e, "all")}
                         {...selectHandlers}
                     >
                         {highlight && (
@@ -306,101 +475,8 @@ export const GridSequencer = () => {
                     </div>
                 </div>
 
-                {/* Chord track */}
-                <div
-                    className="sticky left-0 z-30 flex items-center justify-center border-r border-b border-daw-edge bg-[#26262a] text-[10px] font-semibold tracking-widest text-daw-muted"
-                    style={{ top: RULER_H }}
-                >
-                    CHORDS
-                </div>
-                <div className="sticky z-20 border-b border-daw-edge bg-[#202023]" style={{ top: RULER_H }}>
-                    <div
-                        ref={laneRef}
-                        className="relative h-full"
-                        style={gridLines(measureW, colW, "#3a3a3f", "#2b2b2f")}
-                        {...dropHandlers}
-                    >
-                        {steps.map((step) => (
-                            <button
-                                key={step}
-                                type="button"
-                                aria-label={`Bar ${Math.floor(step / nbrSteps) + 1}, step ${(step % nbrSteps) + 1}`}
-                                onPointerDown={(e) => startSelect(e, step)}
-                                {...selectHandlers}
-                                // Keyboard activation; pointer presses are handled above.
-                                onClick={(e) => e.detail === 0 && setSelectedStep(step)}
-                                className={cn(
-                                    "absolute inset-y-0 touch-none hover:bg-white/5",
-                                    (inRange(step) || (selectedStep === step && !selectedChord)) && "bg-daw-select/25",
-                                )}
-                                style={{ left: step * colW, width: colW }}
-                            />
-                        ))}
-                        {shownTrack.map((data) => (
-                            <div
-                                key={data.id}
-                                className="group absolute top-1.75 h-9.5"
-                                style={{ left: data.step * colW + 2, width: data.len * colW - 4 }}
-                            >
-                                <button
-                                    type="button"
-                                    draggable={!resize}
-                                    onDragStart={(e) => {
-                                        setChordDrag(e, { fromStep: data.id });
-                                        setMovingChord(trackData.find((chord) => chord.step === data.id) ?? null);
-                                    }}
-                                    onDragEnd={() => {
-                                        setMovingChord(null);
-                                        setDragStep(null);
-                                    }}
-                                    onClick={(e) => {
-                                        // A click past the first step selects that step, so a chord can split this one.
-                                        const offset = e.clientX - e.currentTarget.getBoundingClientRect().left + 2;
-                                        // Keyboard clicks have no pointer position and select the first step.
-                                        const step =
-                                            data.step + Math.min(data.len - 1, Math.max(0, Math.floor(offset / colW)));
-                                        if (e.shiftKey) extendSelection(step);
-                                        else setSelectedStep(step);
-                                    }}
-                                    className="flex size-full cursor-grab flex-col items-start justify-center overflow-hidden rounded-md bg-daw-accent px-3 text-left text-daw-accent-ink active:cursor-grabbing"
-                                >
-                                    <span className="text-[13px] leading-tight font-bold">{data.name}</span>
-                                    <span className="font-mono text-[10px] whitespace-nowrap">{data.chord.join(" ")}</span>
-                                </button>
-                                {(["start", "end"] as const).map((edge) => (
-                                    <span
-                                        key={edge}
-                                        aria-hidden="true"
-                                        onPointerDown={(e) => startResize(e, data, edge)}
-                                        onPointerMove={moveResize}
-                                        onPointerUp={endResize}
-                                        onPointerCancel={() => setResize(null)}
-                                        className={cn(
-                                            "absolute inset-y-0 z-10 flex w-2 cursor-ew-resize touch-none items-center justify-center",
-                                            edge === "start" ? "left-0" : "right-0",
-                                        )}
-                                    >
-                                        <span
-                                            className={cn(
-                                                "h-4 w-0.5 rounded-full bg-daw-accent-ink/50 opacity-0 group-hover:opacity-100",
-                                                resize?.fromStep === data.id && resize.edge === edge && "opacity-100",
-                                            )}
-                                        />
-                                    </span>
-                                ))}
-                            </div>
-                        ))}
-                        {highlight && (
-                            <div
-                                aria-hidden="true"
-                                className="pointer-events-none absolute inset-y-0 z-10 rounded-sm border-2 border-daw-select bg-daw-select/15"
-                                style={{ left: highlight.x, width: highlight.w }}
-                            />
-                        )}
-                        {dropPreview}
-                        <Playhead colW={colW} />
-                    </div>
-                </div>
+                {renderLane("chords")}
+                {renderLane("bass")}
 
                 {/* Keyboard */}
                 <div className="sticky left-0 z-10 border-r border-daw-edge">
@@ -422,8 +498,8 @@ export const GridSequencer = () => {
                     ))}
                 </div>
 
-                {/* Piano roll */}
-                <div className="relative" {...dropHandlers}>
+                {/* Piano roll: the chords; drops here go to the chord track. */}
+                <div className="relative" {...dropHandlers("chords")}>
                     {rows.map((row, i) => (
                         <div
                             key={i}
@@ -447,7 +523,7 @@ export const GridSequencer = () => {
                             style={{ left: highlight.x, width: highlight.w }}
                         />
                     )}
-                    {shownTrack.flatMap((data) =>
+                    {shown.chords.flatMap((data) =>
                         data.chord.map((note) => (
                             <div
                                 key={`${data.id}-${note}`}
@@ -462,7 +538,7 @@ export const GridSequencer = () => {
                             </div>
                         )),
                     )}
-                    {dropPreview}
+                    {dropPreview("chords")}
                     <Playhead colW={colW} />
                 </div>
             </div>

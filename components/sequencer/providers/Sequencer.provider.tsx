@@ -1,6 +1,7 @@
 "use client";
 
 import { useTrack } from "@/components/hooks/useTrack";
+import { TLane } from "@/components/providers/Track.provider";
 import { instruments, TInstrumentType } from "@/instruments";
 import { Instrument } from "@/instruments/instrument";
 import { createContext, useCallback, useEffect, useRef, useState } from "react";
@@ -12,6 +13,12 @@ type TPartEvent = { time: Tone.Unit.Time; notes: string[]; duration: Tone.Unit.T
 export type TEffects = { reverbMix: number; reverbSize: number; delayMix: number; delayFeedback: number };
 
 export type TEffectId = "reverb" | "delay";
+
+/** The track a selection is on; a selection made in the ruler covers every track. */
+export type TSelectionLane = TLane | "all";
+
+/** The bass plays this many octaves below the chords. */
+export const BASS_OCTAVES_DOWN = 2;
 
 type TEffectsChain = { delay: Tone.FeedbackDelay; reverb: Tone.Reverb; meter: Tone.Meter };
 
@@ -37,7 +44,9 @@ type TSequencerContext = {
     fundamentalNote: string;
     setFundamentalNote: (note: string) => void;
     selectedStep: number | null;
-    setSelectedStep: (step: number | null) => void;
+    /** Selects `step` (or nothing) on `lane`, which defaults to the track already selected. */
+    setSelectedStep: (step: number | null, lane?: TSelectionLane) => void;
+    selectedLane: TSelectionLane;
     /** Steps `start` to `end` (exclusive) when more than one step is selected. */
     selectedRange: { start: number; end: number } | null;
     /** The steps the selection covers: the range, the chord starting on the selected step, or the step. */
@@ -61,7 +70,7 @@ type TSequencerContext = {
 export const SequencerContext = createContext<TSequencerContext | null>(null);
 
 export const SequencerProvider = ({ children }: { children: React.ReactNode }) => {
-    const { trackData, handleRescale } = useTrack();
+    const { tracks, handleRescale } = useTrack();
     const [selectedInstrument, setSelectedInstrument] = useState<TInstrumentType>("synth");
     const [effects, setEffects] = useState<TEffects>({
         reverbMix: 0.2,
@@ -75,6 +84,7 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
     const [nbrSteps, setNbrSteps] = useState(4);
     const [fundamentalNote, setFundamentalNote] = useState("C");
     const [selectedStep, setSelectedAnchor] = useState<number | null>(null);
+    const [selectedLane, setSelectedLane] = useState<TSelectionLane>("chords");
     const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
@@ -90,7 +100,9 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
             ? { start: Math.min(selectedStep, selectionEnd), end: Math.max(selectedStep, selectionEnd) + 1 }
             : null;
 
-    const chordOnStep = trackData.find((data) => data.step === selectedStep);
+    // A chord (or bass note) selected from its first step selects all of it.
+    const chordOnStep =
+        selectedLane === "all" ? undefined : tracks[selectedLane].find((data) => data.step === selectedStep);
     const selectedArea =
         selectedRange ??
         (chordOnStep
@@ -99,7 +111,8 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
               ? { start: selectedStep, end: selectedStep + 1 }
               : null);
 
-    const setSelectedStep = (step: number | null) => {
+    const setSelectedStep = (step: number | null, lane?: TSelectionLane) => {
+        if (lane) setSelectedLane(lane);
         setSelectedAnchor(step);
         setSelectionEnd(null);
     };
@@ -160,22 +173,24 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
         };
     }, [selectedInstrument]);
 
-    // Rebuild the scheduled chords whenever the track or the grid changes.
+    // Rebuild the scheduled chords and bass notes whenever the tracks or the grid change.
     useEffect(() => {
         const stepTicks = getStepTicks();
+        const events = (lane: TLane, noteOctave: number) =>
+            tracks[lane].map((data) => ({
+                time: `${data.step * stepTicks}i`,
+                notes: data.chord.map((note) => `${note}${noteOctave}`),
+                duration: `${data.len * stepTicks}i`,
+            }));
         const part = new Tone.Part<TPartEvent>(
             (time, event) => instrumentRef.current?.playChord(event.notes, event.duration, time),
-            trackData.map((data) => ({
-                time: `${data.step * stepTicks}i`,
-                notes: data.chord.map((note) => `${note}${octave}`),
-                duration: `${data.len * stepTicks}i`,
-            })),
+            [...events("chords", octave), ...events("bass", octave - BASS_OCTAVES_DOWN)],
         );
         part.start(0);
         return () => {
             part.dispose();
         };
-    }, [trackData, getStepTicks]);
+    }, [tracks, getStepTicks]);
 
     // Tempo, loop region, and the end of the grid when the loop is off.
     useEffect(() => {
@@ -295,6 +310,7 @@ export const SequencerProvider = ({ children }: { children: React.ReactNode }) =
                 setFundamentalNote,
                 selectedStep,
                 setSelectedStep,
+                selectedLane,
                 selectedRange,
                 selectedArea,
                 extendSelection,

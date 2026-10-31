@@ -14,6 +14,7 @@ import { useTrack } from "../hooks/useTrack";
 import { dialogButton } from "./ExportMidiDialog";
 import { useGenerate } from "./hooks/useGenerate";
 import { useSequencer } from "./hooks/useSequencer";
+import { TLane } from "../providers/Track.provider";
 import { TEffectId, TEffects } from "./providers/Sequencer.provider";
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
@@ -325,22 +326,36 @@ const GeneralPanel = () => {
 };
 
 const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
-    const { nbrSteps, selectedStep, selectedRange, selectedArea, setSelectedStep } = useSequencer();
-    const { trackData, getChordAt, handleReplaceRange } = useTrack();
+    const { nbrSteps, selectedStep, selectedLane, selectedRange, selectedArea, setSelectedStep } =
+        useSequencer();
+    const { tracks, handleClearRange } = useTrack();
+    // The tracks the selection acts on: its own, or both for a selection made in the ruler.
+    const lanes: TLane[] = selectedLane === "all" ? ["chords", "bass"] : [selectedLane];
+    const laneTrack = selectedLane === "all" ? [] : tracks[selectedLane];
     const selectedChord = selectedRange
         ? undefined
-        : trackData.find((data) => data.step === selectedStep);
+        : laneTrack.find((data) => data.step === selectedStep);
+    const chordAt = (step: number) =>
+        laneTrack.find((data) => step >= data.step && step < data.step + data.len);
     const stepLabel = (step: number) =>
         `Bar ${Math.floor(step / nbrSteps) + 1} · Step ${(step % nbrSteps) + 1}`;
     const hasChords =
         !!selectedArea &&
-        trackData.some(
-            (data) => data.step < selectedArea.end && data.step + data.len > selectedArea.start,
+        lanes.some((lane) =>
+            tracks[lane].some(
+                (data) => data.step < selectedArea.end && data.step + data.len > selectedArea.start,
+            ),
         );
+    const laneLabel = { chords: "Chords", bass: "Bass", all: "Chords + bass" }[selectedLane];
 
     return (
         <div className="flex flex-col gap-3 p-4">
             <div className="font-mono text-xs text-daw-sub">
+                {selectedStep !== null && (
+                    <span className={selectedLane === "bass" ? "text-daw-bass" : "text-daw-accent"}>
+                        {laneLabel} ·{" "}
+                    </span>
+                )}
                 {selectedRange
                     ? `${stepLabel(selectedRange.start)} – ${stepLabel(selectedRange.end - 1)}`
                     : selectedStep === null
@@ -349,7 +364,14 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
             </div>
             {selectedChord ? (
                 <div className="flex flex-col gap-3 rounded-[10px] border border-daw-raised bg-[#1a1a1c] p-3.5">
-                    <div className="text-3xl font-bold text-daw-accent">{selectedChord.name}</div>
+                    <div
+                        className={cn(
+                            "text-3xl font-bold",
+                            selectedLane === "bass" ? "text-daw-bass" : "text-daw-accent",
+                        )}
+                    >
+                        {selectedChord.name}
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                         {selectedChord.chord.map((note) => (
                             <span
@@ -367,8 +389,8 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                         ? `${selectedRange.end - selectedRange.start} steps selected.`
                         : selectedStep === null
                           ? "Click a chord or a step on the chord track to select it. Drag across steps or the ruler, or Shift-click, to select several."
-                          : getChordAt(selectedStep)
-                            ? `Inside ${getChordAt(selectedStep)?.name}. Drop a chord here to split it.`
+                          : chordAt(selectedStep)
+                            ? `Inside ${chordAt(selectedStep)?.name}. Drop a chord here to split it.`
                             : "Empty step. Drag a chord from the library onto it."}
                 </p>
             )}
@@ -377,6 +399,13 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                     type="button"
                     onClick={onGenerate}
                     disabled={!selectedArea}
+                    title={
+                        selectedLane === "bass"
+                            ? "Bass on the roots of the chords in the selection"
+                            : selectedLane === "all"
+                              ? "Chords, then a bass on their roots, in the selection"
+                              : "Chords in the selection"
+                    }
                     className={cn(
                         actionButton,
                         "border border-daw-accent text-daw-accent hover:bg-daw-accent/10",
@@ -388,7 +417,7 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                 <button
                     type="button"
                     onClick={() =>
-                        selectedArea && handleReplaceRange(selectedArea.start, selectedArea.end, [])
+                        selectedArea && handleClearRange(selectedArea.start, selectedArea.end, lanes)
                     }
                     disabled={!hasChords}
                     title="Delete or Backspace"
@@ -398,7 +427,7 @@ const SelectionPanel = ({ onGenerate }: { onGenerate: () => void }) => {
                     )}
                 >
                     {selectedChord ? <Trash2 className="size-4" /> : <Eraser className="size-4" />}
-                    {selectedChord ? "Delete chord" : "Clear steps"}
+                    {selectedChord ? (selectedLane === "bass" ? "Delete note" : "Delete chord") : "Clear steps"}
                 </button>
                 <button
                     type="button"
@@ -428,7 +457,7 @@ const ColumnHeader = ({ title, children }: { title: string; children?: React.Rea
  */
 export const Inspector = () => {
     const [open, setOpen] = useState(true);
-    const { generateTrack, generateSelection } = useGenerate();
+    const { generateTrack, generateBass, generateSelection } = useGenerate();
     const { fundamentalNote } = useSequencer();
 
     if (!open) {
@@ -455,15 +484,27 @@ export const Inspector = () => {
             <section aria-label="General" className="flex w-30 flex-col border-r border-daw-edge">
                 <ColumnHeader title="General" />
                 {/* Outside the scrolling area so it stays at the top of the column. */}
-                <div className="shrink-0 border-b border-daw-edge p-4">
+                <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-daw-edge p-4">
                     <button
                         type="button"
                         onClick={generateTrack}
                         aria-label="Generate track"
-                        title={`Generate track: replaces the whole track with a progression in ${fundamentalNote} major`}
+                        title={`Generate track: replaces the chords with a progression in ${fundamentalNote} major`}
                         className={cn(
                             actionButton,
-                            "w-full border border-daw-accent px-2 text-daw-accent hover:bg-daw-accent/10",
+                            "border border-daw-accent px-2 text-daw-accent hover:bg-daw-accent/10",
+                        )}
+                    >
+                        <WandSparkles className="size-4" />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={generateBass}
+                        aria-label="Generate bass"
+                        title="Generate bass: replaces the bass line with the roots of the chords"
+                        className={cn(
+                            actionButton,
+                            "border border-daw-bass px-2 text-daw-bass hover:bg-daw-bass/10",
                         )}
                     >
                         <WandSparkles className="size-4" />

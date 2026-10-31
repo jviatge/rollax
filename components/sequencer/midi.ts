@@ -16,31 +16,32 @@ const varLen = (value: number) => {
 const uint32 = (value: number) => [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
 
 /**
- * Builds a single-track Standard MIDI File of the track, as it plays: every chord note in `octave`
- * (C4 is MIDI note 60), at `tempo`, in 4/4, and lasting the whole grid so a loop keeps its length.
+ * Builds a single-track Standard MIDI File of the tracks as they play: each part's notes in its
+ * octave (C4 is MIDI note 60), at `tempo`, in 4/4, and lasting the whole grid so a loop keeps its length.
  */
 export const buildMidi = ({
-    trackData,
+    parts,
     nbrSteps,
     totalSteps,
     tempo,
-    octave,
 }: {
-    trackData: TTrackData[];
+    /** Each track with the octave its notes play in (the chords, and the bass lower). */
+    parts: { data: TTrackData[]; octave: number }[];
     nbrSteps: number;
     totalSteps: number;
     tempo: number;
-    octave: number;
 }) => {
     const stepTicks = (PPQ * 4) / nbrSteps;
-    const events = trackData.flatMap((data) =>
-        data.chord
-            .filter((note) => noteIndex(note) >= 0)
-            .map((note) => (octave + 1) * 12 + noteIndex(note))
-            .flatMap((pitch) => [
-                { tick: data.step * stepTicks, bytes: [0x90, pitch, VELOCITY] },
-                { tick: (data.step + data.len) * stepTicks, bytes: [0x80, pitch, 0] },
-            ]),
+    const events = parts.flatMap(({ data: track, octave }) =>
+        track.flatMap((data) =>
+            data.chord
+                .filter((note) => noteIndex(note) >= 0)
+                .map((note) => (octave + 1) * 12 + noteIndex(note))
+                .flatMap((pitch) => [
+                    { tick: data.step * stepTicks, bytes: [0x90, pitch, VELOCITY] },
+                    { tick: (data.step + data.len) * stepTicks, bytes: [0x80, pitch, 0] },
+                ]),
+        ),
     );
     // Note offs go first on a shared tick, so a note repeated by the next chord sounds again.
     events.sort((a, b) => a.tick - b.tick || a.bytes[0] - b.bytes[0]);
