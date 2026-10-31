@@ -8,12 +8,10 @@ import {
     Repeat,
     Rewind,
     Square,
-    WandSparkles,
 } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useTrack } from "../hooks/useTrack";
 import { notes } from "@/notes";
-import { generateProgression, measureSegments, PROGRESSIONS } from "./generate";
 import { ExportMidiDialog } from "./ExportMidiDialog";
 import { ImportMidiDialog } from "./ImportMidiDialog";
 import { buildMidi, downloadMidi, midiToTrack, parseMidi } from "./midi";
@@ -100,12 +98,10 @@ export const TransportBar = () => {
         handleNbrMeasuresChange,
         handleNbrStepsChange,
         octave,
-        selectedArea,
         setSelectedStep,
     } = useSequencer();
     const { ListChordsByNotes } = useChord();
-    const { trackData, handleReplaceTrack, handleReplaceRange } = useTrack();
-    const lastProgressionRef = useRef<number | null>(null);
+    const { trackData, handleReplaceTrack } = useTrack();
     // The typed tempo while the field is being edited; otherwise the field shows the current tempo.
     const [tempoDraft, setTempoDraft] = useState<string | null>(null);
     const tempoText = tempoDraft ?? String(tempo);
@@ -132,28 +128,6 @@ export const TransportBar = () => {
         }
         if (e.key === "Escape") cancelTempoRef.current = true;
         if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-    };
-
-    // Fills the selected steps, or the whole track, with a random progression, never the same one
-    // twice in a row.
-    const handleGenerate = () => {
-        const choices = PROGRESSIONS.map((_, i) => i).filter((i) => i !== lastProgressionRef.current);
-        const progressionIndex = choices[Math.floor(Math.random() * choices.length)];
-        lastProgressionRef.current = progressionIndex;
-        const { start, end } = selectedArea ?? { start: 0, end: totalSteps };
-        const chords = generateProgression({
-            library: ListChordsByNotes,
-            tonic: fundamentalNote,
-            progressionIndex,
-            segments: measureSegments(start, end, nbrSteps),
-            withSeventh: Math.random() < 0.3,
-        });
-        if (selectedArea) {
-            handleReplaceRange(start, end, chords);
-        } else {
-            handleReplaceTrack(chords);
-            setSelectedStep(null);
-        }
     };
 
     // Replaces the composition with the file's chords on the current steps per measure, and takes
@@ -322,15 +296,6 @@ export const TransportBar = () => {
             </div>
 
             <div className="flex justify-end gap-2">
-                <button
-                    type="button"
-                    onClick={handleGenerate}
-                    title={`Generate a chord progression in ${fundamentalNote} major ${selectedArea ? "in the selection" : "on the whole track"}`}
-                    className="flex h-8.5 items-center gap-2 rounded-[7px] border border-daw-accent px-3.5 font-semibold text-daw-accent hover:bg-daw-accent/10"
-                >
-                    <WandSparkles className="size-4" />
-                    Generate
-                </button>
                 <ImportMidiDialog hasTrack={trackData.length > 0} onImport={handleImport} />
                 <ExportMidiDialog disabled={trackData.length === 0} onExport={handleExport} />
             </div>
