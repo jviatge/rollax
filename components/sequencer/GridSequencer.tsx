@@ -338,7 +338,9 @@ export const GridSequencer = () => {
                                     onClick={(e) => {
                                         // A click past the first step selects that step, so a chord can split this one.
                                         const offset = e.clientX - e.currentTarget.getBoundingClientRect().left + 2;
-                                        const step = data.step + Math.min(data.len - 1, Math.floor(offset / colW));
+                                        // Keyboard clicks have no pointer position and select the first step.
+                                        const step =
+                                            data.step + Math.min(data.len - 1, Math.max(0, Math.floor(offset / colW)));
                                         if (e.shiftKey) extendSelection(step);
                                         else setSelectedStep(step);
                                     }}
