@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { noteIndex, notes } from "@/notes";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { TTrackData } from "../providers/Track.provider";
-import { useTrack } from "../hooks/useTrack";
+import { useTrack, writeRange } from "../hooks/useTrack";
 import { getChordDrag, hasChordDrag, setChordDrag } from "./chordDrag";
 import { useSequencer } from "./hooks/useSequencer";
 
@@ -76,7 +76,6 @@ export const GridSequencer = () => {
         trackData,
         handleChangeChord,
         handleMoveChord,
-        getChordBounds,
         handleResizeChord,
         handleReplaceRange,
     } = useTrack();
@@ -140,12 +139,20 @@ export const GridSequencer = () => {
     const colW = Math.max(MIN_COL_W, Math.floor((viewW - KEY_W) / totalSteps) || MIN_COL_W);
     const gridW = colW * totalSteps;
     const measureW = colW * nbrSteps;
-    // While an edge is dragged, the chord is drawn at its preview size; `id` keeps its original step.
-    const shownTrack = trackData.map((data) =>
-        resize?.fromStep === data.step
-            ? { ...data, id: data.step, step: resize.step, len: resize.len }
-            : { ...data, id: data.step },
-    );
+    // While an edge is dragged, the chord is drawn at its preview size and the chords it covers are
+    // split as they will be on release. `id` keeps the resized chord's original step.
+    const shownTrack = (
+        resize
+            ? writeRange<TTrackData & { id: number | null }>(
+                  trackData.filter((data) => data.step !== resize.fromStep).map((data) => ({ ...data, id: null })),
+                  resize.step,
+                  resize.step + resize.len,
+                  trackData
+                      .filter((data) => data.step === resize.fromStep)
+                      .map((data) => ({ ...data, id: resize.fromStep, step: resize.step, len: resize.len })),
+              )
+            : trackData.map((data) => ({ ...data, id: null }))
+    ).map((data) => ({ ...data, id: data.id ?? data.step }));
     const selectedChord = selectedRange ? undefined : shownTrack.find((data) => data.id === selectedStep);
     const selectedNotes = new Set(selectedChord?.chord.map(noteIndex) ?? []);
     const steps = [...Array(totalSteps).keys()];
@@ -211,15 +218,14 @@ export const GridSequencer = () => {
     const moveResize = (e: React.PointerEvent<HTMLSpanElement>) => {
         const lane = laneRef.current;
         if (!resize || !lane) return;
-        // Snap the dragged edge to the nearest step line, inside the chord's free space.
+        // Snap the dragged edge to the nearest step line, inside the grid.
         const line = Math.round((e.clientX - lane.getBoundingClientRect().left) / colW);
-        const { min, max } = getChordBounds(resize.fromStep, totalSteps);
         const end = resize.step + resize.len;
         const next =
             resize.edge === "end"
-                ? { step: resize.step, len: Math.min(Math.max(line, resize.step + 1), max) - resize.step }
+                ? { step: resize.step, len: Math.min(Math.max(line, resize.step + 1), totalSteps) - resize.step }
                 : (() => {
-                      const step = Math.min(Math.max(line, min), end - 1);
+                      const step = Math.min(Math.max(line, 0), end - 1);
                       return { step, len: end - step };
                   })();
         if (next.step !== resize.step || next.len !== resize.len) setResize({ ...resize, ...next });
