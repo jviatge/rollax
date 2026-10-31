@@ -81,6 +81,8 @@ export const GridSequencer = () => {
         handleReplaceRange,
     } = useTrack();
     const [dragStep, setDragStep] = useState<number | null>(null);
+    // The placed chord being dragged, kept because a drag's data can only be read on drop.
+    const [movingChord, setMovingChord] = useState<TTrackData | null>(null);
     const [resize, setResize] = useState<TResize | null>(null);
     const [selecting, setSelecting] = useState(false);
     const laneRef = useRef<HTMLDivElement>(null);
@@ -242,18 +244,21 @@ export const GridSequencer = () => {
         onDrop: (e: React.DragEvent<HTMLDivElement>) => {
             const payload = getChordDrag(e);
             setDragStep(null);
+            setMovingChord(null);
             if (!payload) return;
             e.preventDefault();
             const step = stepAt(e);
             if ("fromStep" in payload) {
                 handleMoveChord(payload.fromStep, step, totalSteps);
             } else {
-                handleChangeChord(payload.notes, step, payload.name, totalSteps);
+                handleChangeChord(payload.notes, step, payload.name);
             }
             setSelectedStep(step);
         },
     };
-    const dropPreview = dragStep !== null && <DropPreview x={dragStep * colW} w={colW} />;
+    // A moved chord keeps its length, cut only at the grid end, and replaces what it covers.
+    const previewLen = dragStep === null ? 1 : Math.min(movingChord?.len ?? 1, totalSteps - dragStep);
+    const dropPreview = dragStep !== null && <DropPreview x={dragStep * colW} w={previewLen * colW} />;
 
     return (
         <div ref={scrollRef} className="daw-scroll relative min-h-0 flex-1 overflow-auto">
@@ -334,7 +339,14 @@ export const GridSequencer = () => {
                                 <button
                                     type="button"
                                     draggable={!resize}
-                                    onDragStart={(e) => setChordDrag(e, { fromStep: data.id })}
+                                    onDragStart={(e) => {
+                                        setChordDrag(e, { fromStep: data.id });
+                                        setMovingChord(trackData.find((chord) => chord.step === data.id) ?? null);
+                                    }}
+                                    onDragEnd={() => {
+                                        setMovingChord(null);
+                                        setDragStep(null);
+                                    }}
                                     onClick={(e) => {
                                         // A click past the first step selects that step, so a chord can split this one.
                                         const offset = e.clientX - e.currentTarget.getBoundingClientRect().left + 2;
